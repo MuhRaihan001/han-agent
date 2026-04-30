@@ -89,53 +89,129 @@ Rolling context window with automatic summarization keeps conversations coherent
 ## ⚡ Quick Start
 
 ```bash
-# 1. Clone
-git clone https://github.com/TsumuX/han.git && cd han
+# 1. Clone the repo
+git clone https://github.com/TsumuX/han.git
+cd han
 
-# 2. Install
+# 2. Install dependencies
 npm install
 
-# 3. Setup (creates config.json, .env, and skills folder)
+# 3. Run first-time setup
+#    This creates agents/config.json, .env, and agents/skills/
 npm run setup
 
-# 4. Add your API key to agents/config.json
-# 5. Launch
+# 4. Launch HAN
 npm start
 ```
+
+On first launch, go to **⚙ Configure agent** to set your API key, provider, and model before starting a conversation.
 
 > **Global install** — use HAN from anywhere:
 > ```bash
 > npm install -g .
 > start-han   # launch
-> setup-han   # reconfigure
+> setup-han   # re-run first-time setup
 > ```
 
 ---
 
 ## ⚙️ Configuration
 
-Open `agents/config.json` after setup and fill in your credentials:
+HAN comes with an **interactive configuration menu** built right into the CLI. You don't need to edit any files manually.
+
+### Launching the config menu
+
+Start HAN and select **⚙ Configure agent** from the main menu:
+
+<img src="img/home.png" width="720">
+
+### Configuration options
+
+<img src="img/configure.png" width="720">
+
+### Step 1 — Set your API key
+
+Choose **🔑 Set API key**, then pick your provider. Input is **masked** as you type.
+
+<img src="img/api-key.png" width="720">
+
+<img src="img/input-key.png" width="720">
+
+### Step 2 — Choose active provider
+
+Choose **🌐 Choose active provider** and select one of the three supported providers.
+
+<img src="img/provider.png" width="720">
+
+### Step 3 — Set your model
+
+Choose **🤖 Set model name**. A list of preset models for your active provider will appear:
+
+**Claude (Anthropic)**
+```
+   claude-opus-4-5
+   claude-sonnet-4-5
+   claude-haiku-4-5
+   ✏  Custom model name…
+```
+
+**Gemini (Google)**
+```
+   gemini-2.5-flash
+   gemini-1.5-pro
+   gemini-1.5-flash
+   ✏  Custom model name…
+```
+
+**OpenAI**
+```
+   gpt-4o
+   gpt-4o-mini
+   gpt-3.5-turbo
+   ✏  Custom model name…
+```
+
+Pick a preset or choose **✏ Custom model name…** to type any model string manually.
+
+### Manual config (advanced)
+
+If you prefer editing directly, `agents/config.json` is created by `npm run setup`:
 
 ```json
 {
-  "current-provider": "claude",
-  "current-models":   "claude-sonnet-4-5",
-  "claude-api-key":   "YOUR_KEY_HERE",
-  "gemini-api-key":   "",
-  "openai-api-key":   "",
-  "stream-response":  true
+    "current-provider": "claude",
+    "current-models":   "claude-sonnet-4-5",
+    "claude-api-key":   "sk-ant-...",
+    "gemini-api-key":   "",
+    "openai-api-key":   "",
+    "stream-response":  true
 }
 ```
 
+> ⚠️ `agents/config.json` is git-ignored by default. Never commit this file.
+
 **Supported providers:**
 
-| Provider | `current-provider` | Example model |
+| Provider | `current-provider` | Preset models |
 |---|---|---|
-| 🟠 Anthropic Claude | `claude` | `claude-sonnet-4-5` |
-| 🔵 Google Gemini | `gemini` | `gemini-2.0-flash` |
-| 🟢 OpenAI GPT | `openai` | `gpt-4o-mini` |
+| 🟠 Anthropic Claude | `claude` | `claude-opus-4-5` · `claude-sonnet-4-5` · `claude-haiku-4-5` |
+| 🔵 Google Gemini | `gemini` | `gemini-2.5-flash` · `gemini-1.5-pro` · `gemini-1.5-flash` |
+| 🟢 OpenAI GPT | `openai` | `gpt-4o` · `gpt-4o-mini` · `gpt-3.5-turbo` |
 
-You only need to fill in the key for the provider you're using.
+You only need to fill in the key for the provider you're actively using.
+
+---
+
+## 🗄️ Database Setup (optional)
+
+To enable the NLP → SQL feature, configure your MySQL credentials in `.env` (created by `npm run setup`):
+
+```env
+DATABASE_HOST=localhost
+DATABASE_USER=root
+DATABASE_PASSWORD=yourpassword
+DATABASE_NAME=yourdb
+```
 
 ---
 
@@ -230,7 +306,7 @@ Round 3 → success ✔
 
 ### Limitations to know
 
-- 🪟 Targets **Windows CMD** by default — edit `SYSTEM_GENERATE` in `shell-command.js` for Linux/macOS
+- 🪟 Targets **Windows CMD** by default — edit `SYSTEM_GENERATE` in `agents/utils/shell-command.js` for Linux/macOS
 - 🔒 Runs as **your user** — no privilege escalation
 - ⏱️ **10 second timeout** per command — may be too short for large downloads or installs
 - 🚫 **No sandbox or whitelist** — HAN is as powerful (and risky) as your own terminal
@@ -254,15 +330,6 @@ When paired with a MySQL database, HAN can interpret natural language and conver
 
 Queries with **low confidence** or **ambiguous matches** are flagged before execution. Nothing runs without your go-ahead.
 
-Configure your database in `.env`:
-
-```env
-DATABASE_HOST=localhost
-DATABASE_USER=root
-DATABASE_PASSWORD=yourpassword
-DATABASE_NAME=yourdb
-```
-
 ---
 
 ## 🧩 Skills
@@ -272,7 +339,7 @@ Skills are plain `.md` files that get injected into every system prompt. They te
 ```
 agents/skills/
   ├── nlp.md          ← built-in: NLP-to-SQL
-  └── your-skill.md   ← drop any .md here
+  └── your-skill.md   ← drop any .md here, subfolders supported
 ```
 
 A skill file typically contains:
@@ -280,7 +347,7 @@ A skill file typically contains:
 - Expected input/output format
 - Examples
 
-HAN picks it up automatically on next launch.
+HAN scans recursively and picks up all `.md` files automatically on next launch. No restart needed if you add a skill while HAN is not running.
 
 ---
 
@@ -294,23 +361,27 @@ han/
 │   │   ├── Anthropic.js       ← Claude
 │   │   ├── Google.js          ← Gemini
 │   │   └── OpenAi.js          ← GPT
-│   ├── skills/                ← drop .md files here
+│   ├── skills/                ← drop .md skill files here
 │   ├── utils/
-│   │   ├── config.js          ← read/write config
-│   │   ├── history.js         ← conversation memory
+│   │   ├── config.js          ← read/write agents/config.json
+│   │   ├── history.js         ← conversation memory & summarization
 │   │   ├── insturctor.js      ← NLP-to-SQL engine
-│   │   ├── load-skills.js     ← skill loader
+│   │   ├── load-skills.js     ← recursive skill loader
 │   │   └── shell-command.js   ← PC execution engine ⚡
-│   └── response.js            ← main pipeline
+│   ├── configure.js           ← interactive config CLI
+│   └── response.js            ← main AI pipeline
 ├── core/
 │   └── utils/
-│       ├── deploySQL.js       ← MySQL pool
+│       ├── deploySQL.js       ← MySQL connection pool
 │       └── files.js           ← filesystem helpers
 ├── UI/
-│   └── UI.js                  ← terminal renderer
-├── index.js                   ← entry point
-├── cli.js                     ← CLI wrapper
-└── setup.js                   ← first-time setup
+│   ├── headers.js             ← terminal header & label renderers
+│   ├── renderer.js            ← markdown stream printer
+│   ├── select.js              ← interactive select menu
+│   └── utils.js               ← shared terminal utilities
+├── index.js                   ← conversation entry point
+├── cli.js                     ← main menu / launcher
+└── setup.js                   ← first-time setup script
 ```
 
 ---
@@ -326,7 +397,7 @@ han/
 | `claude-api-key` | `string` | Anthropic API key |
 | `gemini-api-key` | `string` | Google API key |
 | `openai-api-key` | `string` | OpenAI API key |
-| `stream-response` | `boolean` | Typewriter streaming output |
+| `stream-response` | `boolean` | Typewriter streaming output (`true` / `false`) |
 
 ### `.env`
 
@@ -336,6 +407,16 @@ han/
 | `DATABASE_USER` | MySQL username |
 | `DATABASE_PASSWORD` | MySQL password |
 | `DATABASE_NAME` | Database name |
+
+---
+
+## 🔄 Reset Configuration
+
+If you need to wipe all settings and start over, go to **⚙ Configure agent → ↩ Reset all settings**, or delete `agents/config.json` and re-run:
+
+```bash
+npm run setup
+```
 
 ---
 
