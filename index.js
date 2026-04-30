@@ -1,31 +1,34 @@
 const readline = require('readline');
-const chalk = require('chalk');
-const ora = require('ora');
-const { streamModelResponse } = require('./agents/response');
+const chalk    = require('chalk');
+const ora      = require('ora');
+
+const { streamModelResponse, historyManager } = require('./agents/response');
 
 const width = () => process.stdout.columns || 80;
-const line = (char = '─') => char.repeat(width());
-const dim = (s) => chalk.dim(s);
-const bold = (s) => chalk.bold(s);
+const line  = (char = '─') => char.repeat(width());
+const dim   = (s) => chalk.dim(s);
+const bold  = (s) => chalk.bold(s);
 const utils = { width, line, dim, bold };
-const { printHeader, printUserMessage, printAssistantLabel, printAssistantChunkEnd, printDivider } = require('./UI/UI');
 
-function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-}
-async function typeWrite(text, delay = 12) {
-    for (const char of text) {
-        process.stdout.write(chalk.white(char));
-        await sleep(delay);
-    }
-}
+const {
+    printHeader,
+    printUserMessage,
+    printAssistantLabel,
+    printAssistantChunkEnd,
+    printDivider,
+    getPromptPrefix,
+    printError,
+    StreamPrinter,
+} = require('./UI/UI');
+
+const USER_ID = 'default-user';
 
 async function main() {
     printHeader(utils);
 
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const rl  = readline.createInterface({ input: process.stdin, output: process.stdout });
     const ask = () => new Promise(resolve => {
-        process.stdout.write('\n' + chalk.cyan('❯ '));
+        process.stdout.write('\n' + getPromptPrefix());
         rl.once('line', resolve);
     });
 
@@ -42,19 +45,29 @@ async function main() {
         printUserMessage(input, utils);
         printDivider(utils);
 
-        const spinner = ora({ text: chalk.dim('Thinking…'), color: 'cyan', spinner: 'dots' }).start();
-        let firstChunk = true;
+        const spinner   = ora({ text: chalk.dim('Thinking…'), color: 'cyan', spinner: 'dots' }).start();
+        let firstChunk  = true;
+        const printer   = new StreamPrinter(utils);
 
-        for await (const chunk of streamModelResponse('default-user', input)) {
-            if (firstChunk) {
-                spinner.stop();
-                printAssistantLabel(utils);
-                firstChunk = false;
+        try {
+            for await (const chunk of streamModelResponse(USER_ID, input)) {
+                if (firstChunk) {
+                    spinner.stop();
+                    printAssistantLabel(utils);
+                    firstChunk = false;
+                }
+                printer.write(chunk);
             }
-            await typeWrite(chunk);
+
+            printer.flush();
+            const stats = historyManager.stats(USER_ID);
+            printAssistantChunkEnd(utils, stats);
+
+        } catch (err) {
+            spinner.stop();
+            printError(err.message || String(err));
         }
 
-        printAssistantChunkEnd(utils);
         printDivider(utils);
     }
 }

@@ -57,25 +57,6 @@ async function getResponse(userId, prompt) {
     return { stream: false, text: await generateModelResponse(userId, prompt) };
 }
 
-async function generateModelResponse(userId, prompt) {
-    let response;
-    const config = await loadConfig();
-    const { model, modelname } = await _buildModel(config);
-    const messages = await _buildMessages(userId, prompt);
-    const isShell = await validatePrompt(prompt, config);
-
-    if (isShell) {
-        response = executeWithContext(prompt);
-    } else {
-        response = await model.generateResponse(messages, modelname);
-    }
-
-    historyManager.add(userId, "user", prompt);
-    historyManager.add(userId, "assistant", response);
-
-    return response;
-}
-
 function formatRoundsOutput(rounds) {
     return rounds.flatMap((round, ri) =>
         round.map(task => [
@@ -93,8 +74,8 @@ async function generateModelResponse(userId, prompt) {
 
     let response;
     if (isShell) {
-        const { rounds } = await executeWithContext(prompt); // ✅ await
-        response = formatRoundsOutput(rounds);              // ✅ format ke string
+        const { rounds } = await executeWithContext(prompt);
+        response = formatRoundsOutput(rounds);
     } else {
         response = await model.generateResponse(messages, modelname);
     }
@@ -113,8 +94,8 @@ async function* streamModelResponse(userId, prompt) {
     let fullResponse = "";
 
     if (isShell) {
-        const { rounds } = await executeWithContext(prompt); // ✅ await
-        fullResponse = formatRoundsOutput(rounds);           // ✅ format ke string
+        const { rounds } = await executeWithContext(prompt);
+        fullResponse = formatRoundsOutput(rounds);
         for (const line of fullResponse.split("\n")) {
             yield line + "\n";
         }
@@ -131,4 +112,4 @@ async function* streamModelResponse(userId, prompt) {
 
 const clearHistory = (userId) => historyManager.clear(userId);
 
-module.exports = { generateModelResponse, streamModelResponse, clearHistory, getResponse };
+module.exports = { generateModelResponse, streamModelResponse, clearHistory, getResponse, historyManager };
