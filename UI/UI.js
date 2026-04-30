@@ -1,5 +1,6 @@
 const chalk = require('chalk');
 const ora = require('ora');
+
 function printHeader({ width, line, dim, bold }) {
     console.clear();
 
@@ -11,14 +12,13 @@ function printHeader({ width, line, dim, bold }) {
         '██║  ██║██║  ██║██║ ╚████║',
         '╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝',
     ];
-    const w = width();
-    const asciiW = Math.max(...ascii.map(l => l.length));
-    const leftPad = ' '.repeat(Math.max(0, Math.floor((w - asciiW) / 2)));
 
-    ascii.forEach(row => console.log(leftPad + chalk.cyan(row)));
+    ascii.forEach(row => console.log(chalk.cyan(row)));  // <-- hapus leftPad
 
+    // sisa kode tidak berubah...
     console.log();
 
+    const w = width();
     const title = '  ✦  Assistant powered by LLMs  ✦  ';
     const hint = 'type "exit" to quit  ';
     const pad = w - title.length - hint.length;
@@ -34,7 +34,6 @@ function printHeader({ width, line, dim, bold }) {
     console.log(chalk.cyan('╰' + '─'.repeat(w - 2) + '╯'));
     console.log();
 }
-
 function printUserMessage(text, { dim }) {
     console.log();
     console.log(chalk.bgHex('#1e1e2e').white(' You ') + '  ' + dim(new Date().toLocaleTimeString()));
