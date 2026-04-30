@@ -10,16 +10,22 @@ const dim   = (s) => chalk.dim(s);
 const bold  = (s) => chalk.bold(s);
 const utils = { width, line, dim, bold };
 
-const {
-    printHeader,
-    printUserMessage,
-    printAssistantLabel,
-    printAssistantChunkEnd,
-    printDivider,
-    getPromptPrefix,
-    printError,
-    StreamPrinter,
-} = require('./UI/UI');
+
+const { 
+    printHeader, 
+    printUserMessage, 
+    printAssistantLabel, 
+    printAssistantChunkEnd 
+} = require('./UI/headers');
+
+
+const { 
+    printDivider, 
+    getPromptPrefix, 
+    printError 
+} = require('./UI/utils');
+
+const { StreamPrinter } = require('./UI/renderer');
 
 const USER_ID = 'default-user';
 

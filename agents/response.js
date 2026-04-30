@@ -40,7 +40,7 @@ async function _buildMessages(userId, prompt) {
     const history = historyManager.getForPrompt(userId);
     const result = [
         {
-            role: "system",
+            role: "dev",
             content: `You have the following skills:\n\n${skillsContext}`,
         },
         ...history,

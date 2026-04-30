@@ -1,5 +1,6 @@
 {
   "name": "ryux-remake",
+  "type": "commonjs",
   "version": "1.0.0",
   "bin": {
     "start-han": "./cli.js",
@@ -18,9 +19,6 @@
     "@anthropic-ai/sdk": "^0.86.1",
     "@google/genai": "^1.49.0",
     "chalk": "^4.1.2",
-    "claude-api": "^1.0.4",
-    "discord.js": "^14.26.2",
-    "docx": "^9.6.1",
     "dotenv": "^17.4.1",
     "fs": "^0.0.1-security",
     "mysql2": "^3.20.0",
