@@ -35,7 +35,7 @@ async function main() {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        terminal: true
+        terminal: false
     });
 
     const ask = () => new Promise(resolve => {
@@ -48,6 +48,7 @@ async function main() {
         rl.resume();
 
         rl.once('line', (input) => {
+            process.stdout.write('\x1B[1A\x1B[2K');
             rl.pause();
             resolve(input);
         });
