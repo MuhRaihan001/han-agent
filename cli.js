@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 const readline = require('readline');
-const chalk    = require('chalk');
+const chalk = require('chalk');
 const { printHeader } = require('./UI/headers');
-const { showSelect }  = require('./UI/select');
+const { showSelect } = require('./UI/select');
 const { loadConfig, getProviderColor } = require('./UI/utils');
 
-const dim  = s => chalk.dim(s);
+const dim = s => chalk.dim(s);
 const bold = s => chalk.bold(s);
 
 const termWidth = () => process.stdout.columns || 100;
-const line      = () => '─'.repeat(termWidth() - 2);
+const line = () => '─'.repeat(termWidth() - 2);
 
 function printBanner() {
-    printHeader({ width: termWidth, line, dim, bold });
 
-    const cfg      = loadConfig();
+    const cfg = loadConfig();
     const provider = cfg['current-provider'] || 'unknown';
-    const model    = cfg['current-models']   || 'unknown';
-    const pColor   = getProviderColor(provider);
+    const model = cfg['current-models'] || 'unknown';
+    const pColor = getProviderColor(provider);
 
-    const w        = Math.min(termWidth() - 4, 80);
-    const colLeft  = Math.floor(w * 0.5);
+    const w = Math.min(termWidth() - 4, 80);
+    const colLeft = Math.floor(w * 0.5);
     const colRight = w - colLeft - 3;
 
     function padR(str, width) {
@@ -30,7 +29,7 @@ function printBanner() {
 
     function infoRow(label, value) {
         const l = padR(dim(label), colLeft);
-        const r = padR(value,      colRight);
+        const r = padR(value, colRight);
         return chalk.cyan('│') + ' ' + l + chalk.cyan('│') + ' ' + r + ' ' + chalk.cyan('│');
     }
 
@@ -38,16 +37,16 @@ function printBanner() {
     const midSep = chalk.cyan('├' + '─'.repeat(w) + '┤');
     const botSep = chalk.cyan('╰' + '─'.repeat(w) + '╯');
 
-    const hdrText  = ' ⚙  Active configuration';
-    const hdrPad   = ' '.repeat(Math.max(0, w - hdrText.length));
-    const hdrLine  = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
+    const hdrText = ' ⚙  Active configuration';
+    const hdrPad = ' '.repeat(Math.max(0, w - hdrText.length));
+    const hdrLine = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
 
     console.log(topSep);
     console.log(hdrLine);
     console.log(midSep);
     console.log(infoRow('Provider', pColor(`[${provider}]`)));
-    console.log(infoRow('Model',    chalk.yellow(model)));
-    console.log(infoRow('Status',   chalk.green('● ready')));
+    console.log(infoRow('Model', chalk.yellow(model)));
+    console.log(infoRow('Status', chalk.green('● ready')));
     console.log(botSep);
     console.log();
 }
@@ -59,7 +58,7 @@ async function main() {
 
     const result = await showSelect({
         rl,
-        title:   '✦  Main Menu',
+        title: '✦  Main Menu',
         message: 'What would you like to do?',
         choices: [
             '⚡  Start conversation',

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 const readline = require('readline');
-const chalk    = require('chalk');
-const { showSelect }  = require('../UI/select');
+const chalk = require('chalk');
+const { showSelect } = require('../UI/select');
 const { loadConfig, getProviderColor, printError } = require('../UI/utils');
 const { saveConfig, VALID_PROVIDERS } = require('./utils/config');
 
-const dim  = s => chalk.dim(s);
+const dim = s => chalk.dim(s);
 const bold = s => chalk.bold(s);
 
 const termWidth = () => process.stdout.columns || 100;
 
-function boxTop(w)    { return chalk.cyan('╭' + '─'.repeat(w) + '╮'); }
+function boxTop(w) { return chalk.cyan('╭' + '─'.repeat(w) + '╮'); }
 function boxBottom(w) { return chalk.cyan('╰' + '─'.repeat(w) + '╯'); }
-function boxSep(w)    { return chalk.cyan('├' + '─'.repeat(w) + '┤'); }
+function boxSep(w) { return chalk.cyan('├' + '─'.repeat(w) + '┤'); }
 
 function padR(str, width) {
     const vis = str.replace(/\x1B\[[0-9;]*m/g, '').length;
@@ -28,7 +28,7 @@ function printConfigHeader() {
     console.clear();
     const w = Math.min(termWidth() - 4, 80);
 
-    const title    = '  ⚙   Configure Agent';
+    const title = '  ⚙   Configure Agent';
     const subtitle = '  Set provider, model, and API keys';
 
     console.log(boxTop(w));
@@ -36,29 +36,29 @@ function printConfigHeader() {
     console.log(boxRow(dim(subtitle), w));
     console.log(boxBottom(w));
     console.log();
-    const cfg      = loadConfig();
+    const cfg = loadConfig();
     const provider = cfg['current-provider'] || 'not set';
-    const model    = cfg['current-models']   || 'not set';
-    const pColor   = getProviderColor(provider);
+    const model = cfg['current-models'] || 'not set';
+    const pColor = getProviderColor(provider);
 
     const colL = Math.floor((w - 3) * 0.45);
     const colR = w - colL - 3;
 
     function infoRow(label, value) {
         const l = padR(dim(label), colL);
-        const r = padR(value,      colR);
+        const r = padR(value, colR);
         return chalk.cyan('│') + ' ' + l + chalk.cyan('│') + ' ' + r + ' ' + chalk.cyan('│');
     }
 
-    const hdr    = chalk.bgHex('#0f3460').white('  Current Configuration  ');
-    const hdrPad = ' '.repeat(Math.max(0, w - hdr.replace(/\x1B\[[0-9;]*m/g,'').length));
+    const hdr = chalk.bgHex('#0f3460').white('  Current Configuration  ');
+    const hdrPad = ' '.repeat(Math.max(0, w - hdr.replace(/\x1B\[[0-9;]*m/g, '').length));
 
     console.log(boxTop(w));
     console.log(chalk.cyan('│') + hdr + hdrPad + chalk.cyan('│'));
     console.log(boxSep(w));
 
     console.log(infoRow('Provider', pColor(`[${provider}]`)));
-    console.log(infoRow('Model',    chalk.yellow(model)));
+    console.log(infoRow('Model', chalk.yellow(model)));
 
     for (const p of VALID_PROVIDERS) {
         const key = cfg[`${p}-api-key`] || '';
@@ -74,7 +74,7 @@ function printConfigHeader() {
 
 function askInput(rl, question, { mask = false, validate = null } = {}) {
     return new Promise(resolve => {
-        const w     = Math.min(termWidth() - 4, 80);
+        const w = Math.min(termWidth() - 4, 80);
         const label = chalk.cyan('❯ ') + chalk.white(question + ' ');
 
         function attempt() {
@@ -148,7 +148,7 @@ async function pageSetApiKey(rl) {
     // Step 1 – choose provider
     const providerResult = await showSelect({
         rl,
-        title:   '⚙   Set API Key  →  Choose Provider',
+        title: '⚙   Set API Key  →  Choose Provider',
         message: 'Which provider\'s API key do you want to set?',
         choices: [
             ...VALID_PROVIDERS.map(p => `${getProviderIcon(p)}  ${p}`),
@@ -203,10 +203,10 @@ async function pageChooseProvider(rl) {
 
     const result = await showSelect({
         rl,
-        title:   '⚙   Choose Active Provider',
+        title: '⚙   Choose Active Provider',
         message: 'Select the provider you want to use:',
-        detail:       'About providers',
-        detailBody:   'Claude → Anthropic\nGemini → Google\nOpenAI → OpenAI\n\nMake sure the API key\nfor the selected provider\nis already set.',
+        detail: 'About providers',
+        detailBody: 'Claude → Anthropic\nGemini → Google\nOpenAI → OpenAI\n\nMake sure the API key\nfor the selected provider\nis already set.',
         choices: [
             ...VALID_PROVIDERS.map(p => `${getProviderIcon(p)}  ${p}`),
             '← Back',
@@ -217,8 +217,8 @@ async function pageChooseProvider(rl) {
     if (!result || result.value === '← Back') return;
 
     const provider = VALID_PROVIDERS[result.index];
-    const cfg      = loadConfig();
-    const key      = cfg[`${provider}-api-key`];
+    const cfg = loadConfig();
+    const key = cfg[`${provider}-api-key`];
 
     if (!key) {
         printConfigHeader();
@@ -234,7 +234,7 @@ async function pageChooseProvider(rl) {
 
 async function pageSetModel(rl) {
     printConfigHeader();
-    const cfg      = loadConfig();
+    const cfg = loadConfig();
     const provider = (cfg['current-provider'] || '').toLowerCase();
 
     const suggestions = {
@@ -248,7 +248,7 @@ async function pageSetModel(rl) {
     if (modelList.length > 0) {
         const result = await showSelect({
             rl,
-            title:   '⚙   Set Model',
+            title: '⚙   Set Model',
             message: `Choose a preset model for ${provider}, or pick "Custom" to type your own:`,
             choices: [
                 ...modelList,
@@ -303,7 +303,7 @@ async function pageResetConfig(rl) {
 
     const result = await showSelect({
         rl,
-        title:   '⚠   Reset Configuration',
+        title: '⚠   Reset Configuration',
         message: 'This will clear all API keys, provider, and model settings.\n\nAre you sure?',
         choices: [
             '✖  Yes, reset everything',
@@ -315,12 +315,12 @@ async function pageResetConfig(rl) {
     if (!result || result.value.startsWith('←')) return;
 
     saveConfig({
-        'current-models':   '',
+        'current-models': '',
         'current-provider': '',
-        'gemini-api-key':   '',
-        'claude-api-key':   '',
-        'openai-api-key':   '',
-        'stream':           false,
+        'gemini-api-key': '',
+        'claude-api-key': '',
+        'openai-api-key': '',
+        'stream': false,
     });
 
     console.log('\n' + chalk.red('✔  Configuration reset.\n'));
@@ -335,7 +335,7 @@ async function main() {
 
         const result = await showSelect({
             rl,
-            title:   '⚙   Configure Agent',
+            title: '⚙   Configure Agent',
             message: 'What would you like to configure?',
             choices: [
                 '🔑  Set API key',
@@ -362,7 +362,7 @@ async function main() {
         } else if (choice.includes('Back')) {
             delete require.cache[require.resolve('../cli')];
             require('../cli');
-            return; 
+            return;
         } else {
             break; // Back
         }

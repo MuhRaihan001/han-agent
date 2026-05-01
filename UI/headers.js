@@ -16,6 +16,61 @@ function printHeader({ width, line, dim, bold }) {
     ascii.forEach(row => console.log(chalk.cyan(row)));
     console.log();
 
+    const features = [
+        { name: 'Shell Execution',   desc: 'Run real commands on your machine' },
+        { name: 'Skill System',      desc: 'Extend via .md files in skills/'   },
+        { name: 'Multi-Provider AI', desc: 'Claude · Gemini · GPT'             },
+        { name: 'Smart History',     desc: 'Rolling context + summarization'   },
+        { name: 'NLP → SQL',         desc: 'Plain English to MySQL queries'    },
+        { name: 'Streaming Output',  desc: 'Real-time markdown in terminal'    },
+    ];
+
+    const BOX_W = Math.min((process.stdout.columns || 100) - 2, 66);
+    const HALF  = Math.floor((BOX_W - 2) / 2);
+
+    const padTo = (str, len) => {
+        const vis = str.replace(/\x1B\[[0-9;]*m/g, '').length;
+        return str + ' '.repeat(Math.max(0, len - vis));
+    };
+
+    const border = (tl, tr, fill) =>
+        chalk.cyan(tl + fill.repeat(BOX_W) + tr);
+
+    const emptyRow = () =>
+        chalk.cyan('│') + ' '.repeat(BOX_W) + chalk.cyan('│');
+
+    const twoCol = (l = '', r = '') =>
+        chalk.cyan('│') +
+        padTo(' ' + l, HALF) +
+        padTo(' ' + r, BOX_W - HALF) +
+        chalk.cyan('│');
+
+    console.log(border('╭', '╮', '─'));
+    console.log(emptyRow());
+
+    for (let i = 0; i < features.length; i += 2) {
+        const a = features[i];
+        const b = features[i + 1];
+
+        // Feature name row
+        const nameA = chalk.cyan('◆ ') + chalk.bold.white(a.name);
+        const nameB = b ? chalk.cyan('◆ ') + chalk.bold.white(b.name) : '';
+        console.log(twoCol(nameA, nameB));
+
+        // Description row
+        const descA = dim('  ' + a.desc);
+        const descB = b ? dim('  ' + b.desc) : '';
+        console.log(twoCol(descA, descB));
+
+        // Spacer between groups (but not after the last one)
+        if (i + 2 < features.length) console.log(emptyRow());
+    }
+
+    console.log(emptyRow());
+    console.log(border('╰', '╯', '─'));
+    console.log();
+
+    // ── Title bar ─────────────────────────────────────────────────
     const w     = width();
     const title = '  ✦  Assistant powered by LLMs  ✦  ';
     const hint  = 'type "exit" to quit  ';

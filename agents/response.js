@@ -28,15 +28,30 @@ async function _buildModel(config) {
 }
 
 async function validatePrompt(prompt, config) {
-    const instruction =
-        `check if the following prompt is valid for generating shell commands. If it is valid, respond with "VALID". If it is not valid, respond with "INVALID" and a brief explanation.\n\n` +
-        prompt;
+    const instruction = `You are an intent classifier. Your job is to determine whether the user's input is requesting a shell command to be executed, or just having a casual conversation.
+
+    A prompt is VALID (shell command intent) if it:
+    - Asks to run, execute, or perform a system operation (e.g. list files, install packages, check disk space)
+    - Describes a task that maps naturally to a CLI operation (e.g. "zip this folder", "kill port 3000", "show running processes")
+    - Requests automation or scripting of OS-level tasks
+    - Uses technical terms implying terminal usage (e.g. "grep", "chmod", "ssh", "docker", "git")
+    - Asks to create, delete, move, copy, or modify files/directories
+
+    A prompt is INVALID (not shell command intent) if it:
+    - Is general conversation, a greeting, or small talk (e.g. "hi", "thanks", "how are you")
+    - Asks for explanations, definitions, or conceptual questions without action intent
+    - Is a question about code logic without requesting execution
+    - Requests creative writing, translation, or summarization
+    - Is ambiguous but leans more toward information-seeking than task execution
+
+    Respond with ONLY "VALID" or "INVALID: <one-line reason>". No extra text.
+
+    User input: "${prompt}"`;
 
     const { model, modelname } = await _buildModel(config);
     const response = await model.generateResponse([{ role: "user", content: instruction }], modelname);
     return response.trim().toUpperCase().startsWith("VALID");
 }
-
 async function _buildMessages(userId, prompt) {
     const skillsContext = await getSkillsContext();
     const history = historyManager.getForPrompt(userId);
