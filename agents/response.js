@@ -11,6 +11,8 @@ const MODEL_PATHS = {
     openai: "./models/OpenAi",
 };
 
+const config = loadConfig();
+
 async function _buildModel(config) {
     const modelname = config["current-models"]?.toLowerCase();
     const currentProvider = config["current-provider"]?.toLowerCase();
@@ -50,7 +52,6 @@ async function _buildMessages(userId, prompt) {
 }
 
 async function getResponse(userId, prompt) {
-    const config = await loadConfig();
     if (config["stream-response"]) {
         return { stream: true, generator: streamModelResponse(userId, prompt) };
     }
@@ -67,7 +68,6 @@ function formatRoundsOutput(rounds) {
 }
 
 async function generateModelResponse(userId, prompt) {
-    const config = await loadConfig();
     const { model, modelname } = await _buildModel(config);
     const messages = await _buildMessages(userId, prompt);
     const isShell = await validatePrompt(prompt, config);
@@ -86,7 +86,6 @@ async function generateModelResponse(userId, prompt) {
 }
 
 async function* streamModelResponse(userId, prompt) {
-    const config = await loadConfig();
     const { model, modelname } = await _buildModel(config);
     const messages = await _buildMessages(userId, prompt);
     const isShell = await validatePrompt(prompt, config);
