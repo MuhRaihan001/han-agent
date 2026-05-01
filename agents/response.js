@@ -108,7 +108,7 @@ async function* streamModelResponse(userId, prompt) {
     let fullResponse = "";
 
     if (isShell) {
-        const { rounds } = await executeWithContext(prompt);
+        const { rounds } = await executeWithContext(prompt, { sandbox: config.sandbox });
         fullResponse = formatRoundsOutput(rounds);
         for (const line of fullResponse.split("\n")) {
             yield line + "\n";
