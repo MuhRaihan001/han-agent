@@ -55,31 +55,104 @@ async function executeShellCommands(commands, { stopOnError = true } = {}) {
         throw new Error('commands must be a non-empty array.');
 
     const results = [];
-    const dim  = s => chalk.dim(s);
-    const bold = s => chalk.bold(s);
-    for (const cmd of commands) {
+    const dim     = s => chalk.dim(s);
+    const bold    = s => chalk.bold(s);
+    const termW   = () => process.stdout.columns || 100;
+    const divider = () => chalk.dim('─'.repeat(termW() - 2));
+
+    for (let i = 0; i < commands.length; i++) {
+        const cmd   = commands[i];
+        const index = `[${i + 1}/${commands.length}]`;
+
+        console.log();
+        console.log(divider());
+        console.log(
+            chalk.bgHex('#0f3460').white(` ⚡ Command ${index} `) +
+            '  ' +
+            dim(new Date().toLocaleTimeString())
+        );
+        console.log(dim('  $ ') + chalk.yellow(cmd));
+        console.log(divider());
 
         const askToRun = await showSelect({
             rl,
-            title: `Run command?`,
-            message: `Would you like to run:\n${chalk.yellow(cmd)}`,
-            choices: ['Yes', 'No'],
-            helpers: { dim, bold }
+            title:   `Execute command ${index}?`,
+            message: `Run this on your machine?`,
+            choices: ['✔  Yes, run it', '✖  Skip this command', '⛔  Abort all remaining'],
+            helpers: { dim, bold },
         });
 
-        if (!askToRun || askToRun.value === 'No') {
+        if (!askToRun || askToRun.value.startsWith('⛔')) {
+            console.log();
+            console.log(chalk.red('  ⛔ Aborted.') + dim(' Remaining commands cancelled.'));
+            results.push({ command: cmd, stdout: '', stderr: 'User aborted', exitCode: 1, timedOut: false });
+            break;
+        }
+
+        if (askToRun.value.startsWith('✖')) {
+            console.log();
+            console.log(dim('  ⊘ Skipped.'));
             results.push({ command: cmd, stdout: '', stderr: 'User skipped command', exitCode: 0, timedOut: false });
-            rl.close();
             continue;
         }
 
+        const spinner = require('ora')({
+            text:    chalk.dim('Running…'),
+            color:   'cyan',
+            spinner: 'dots',
+        }).start();
+
         const result = await runCommand(cmd);
+        spinner.stop();
+
+        const ok          = result.exitCode === 0 && !result.timedOut;
+        const statusBadge = ok
+            ? chalk.bgGreen.black(' ✔ OK ')
+            : result.timedOut
+                ? chalk.bgYellow.black(' ⏱ TIMEOUT ')
+                : chalk.bgRed.white(` ✖ EXIT ${result.exitCode} `);
+
+        console.log();
+        console.log(statusBadge + '  ' + dim(cmd));
+
+        if (result.stdout) {
+            const bar = chalk.dim('─'.repeat(Math.max(0, termW() - 14)));
+            console.log(chalk.dim('┌── stdout ') + bar);
+            result.stdout.split('\n').forEach(line =>
+                console.log(chalk.dim('│ ') + chalk.white(line))
+            );
+            console.log(chalk.dim('└' + '─'.repeat(termW() - 3)));
+        }
+
+        if (result.stderr) {
+            const bar = chalk.dim('─'.repeat(Math.max(0, termW() - 14)));
+            console.log(chalk.dim('┌── stderr ') + bar);
+            result.stderr.split('\n').forEach(line =>
+                console.log(chalk.dim('│ ') + chalk.red(line))
+            );
+            console.log(chalk.dim('└' + '─'.repeat(termW() - 3)));
+        }
+
+        if (!result.stdout && !result.stderr) {
+            console.log(dim('  (no output)'));
+        }
+
         results.push(result);
-        if (stopOnError && result.exitCode !== 0) break;
+
+        if (stopOnError && result.exitCode !== 0) {
+            console.log();
+            console.log(
+                chalk.red('  ✖ Stopping — command failed (exit ') +
+                chalk.bold(result.exitCode) +
+                chalk.red(')')
+            );
+            break;
+        }
     }
+
+    console.log();
     return results;
 }
-
 const SYSTEM_GENERATE = `You are a shell command generator (Windows).
 Respond ONLY with raw JSON, no markdown or explanation.
 Format: {"tasks":[{"natural_command":"<step summary>","commands":["cmd1"]}]}
