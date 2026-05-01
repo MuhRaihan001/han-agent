@@ -19,7 +19,7 @@ function printBanner() {
     const pColor = getProviderColor(provider);
 
     const w = Math.min(termWidth() - 4, 80);
-    const colLeft = Math.floor(w * 0.5);
+    const colLeft = Math.floor((w - 3) / 2);
     const colRight = w - colLeft - 3;
 
     function padR(str, width) {
@@ -41,12 +41,14 @@ function printBanner() {
     const hdrPad = ' '.repeat(Math.max(0, w - hdrText.length));
     const hdrLine = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
 
+    const statusText = model === 'unknown' || provider === 'unknown' ? chalk.red('● not configured') : chalk.green('● ready');
+
     console.log(topSep);
     console.log(hdrLine);
     console.log(midSep);
     console.log(infoRow('Provider', pColor(`[${provider}]`)));
     console.log(infoRow('Model', chalk.yellow(model)));
-    console.log(infoRow('Status', chalk.green('● ready')));
+    console.log(infoRow('Status', statusText));
     console.log(botSep);
     console.log();
 }

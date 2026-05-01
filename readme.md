@@ -27,15 +27,11 @@
 
 </div>
 
----
-
 ## 🧠 What is HAN?
 
 HAN is a **terminal-based AI assistant** that goes beyond just answering questions. It can *act* — executing real shell commands on your machine, querying your database with plain English, and remembering your conversation context — all from a single terminal prompt.
 
 Think of it as a CLI copilot that actually does things.
-
----
 
 ## ✨ Features at a glance
 
@@ -84,8 +80,6 @@ Rolling context window with automatic summarization keeps conversations coherent
 </tr>
 </table>
 
----
-
 ## ⚡ Quick Start
 
 ```bash
@@ -112,8 +106,6 @@ On first launch, go to **⚙ Configure agent** to set your API key, provider, an
 > start-han   # launch
 > setup-han   # re-run first-time setup
 > ```
-
----
 
 ## ⚙️ Configuration
 
@@ -200,8 +192,6 @@ If you prefer editing directly, `agents/config.json` is created by `npm run setu
 
 You only need to fill in the key for the provider you're actively using.
 
----
-
 ## 🗄️ Database Setup (optional)
 
 To enable the NLP → SQL feature, configure your MySQL credentials in `.env` (created by `npm run setup`):
@@ -212,8 +202,6 @@ DATABASE_USER=root
 DATABASE_PASSWORD=yourpassword
 DATABASE_NAME=yourdb
 ```
-
----
 
 ## 💻 Shell Command Execution
 
@@ -228,7 +216,7 @@ You type something
         │
         ▼
   ┌─────────────────────────────────────────┐
-  │  1. INTENT CHECK                        │
+  │  1. INTENT CLASSIFICATION               │
   │     LLM decides: shell task or chat?    │
   └────────────────┬────────────────────────┘
                    │
@@ -246,19 +234,116 @@ You type something
          │
          ▼
   ┌──────────────┐
-  │ 3. EXECUTE   │
+  │ 3. SAFETY    │
+  │  blocklist   │
+  │  check       │
+  └──────┬───────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ 4. EXECUTE   │
   │  run on PC   │
   │  (10s limit) │
   └──────┬───────┘
          │
          ▼
   ┌──────────────────────────────┐
-  │ 4. SELF-CORRECTION LOOP      │
+  │ 5. SELF-CORRECTION LOOP      │
   │  failed? → LLM fixes it      │
   │  done?   → stop              │
   │  more?   → continue          │
   │  max 3 rounds                │
   └──────────────────────────────┘
+```
+
+### Intent Classification
+
+Before doing anything, HAN runs a lightweight **AI classifier** on every message to decide whether you're asking it to do a system task or just having a conversation. This prevents HAN from accidentally running commands when you're only asking questions, and ensures shell tasks are handled with the right pipeline.
+
+Prompts are classified as shell intent when they describe OS-level operations (run, execute, install, delete, create files/folders, etc.) and as conversation when they ask for explanations, definitions, creative writing, or general chat. The classifier responds with either `VALID` or `INVALID: <reason>` — no grey area.
+
+### Safety: Command Blocklist
+
+Every generated command passes through a **hardcoded blocklist** before it is ever shown to the user or executed. Commands matching any of the following patterns are immediately blocked and logged:
+
+| Pattern | Why it's blocked |
+|---|---|
+| `rm -rf` | Recursive delete with no confirmation |
+| `format X:` | Disk formatting |
+| `del /s` or `del /q` | Silent recursive delete |
+| `rd /s` or `rd /q` | Recursive directory removal |
+| `diskpart` | Low-level disk partitioning |
+| `cacls` / `icacls` | Modifying file ACLs |
+| `net user` | User account manipulation |
+| `shutdown` | System shutdown/restart |
+| `reg delete` / `reg add` | Registry modification |
+| `sfc /scannow` | System file checker (requires elevation) |
+
+Blocked commands are flagged in the terminal with a ⛔ badge and written to the audit log. They are never sent to the shell.
+
+### Sandbox Mode & Effect Prediction
+
+When sandbox mode is enabled, HAN runs `predictEffects()` on each command before asking for your confirmation. It scans the command text and tells you exactly what side effects to expect — before anything touches your machine:
+
+```
+🧪 SANDBOX PREVIEW
+  · Creates/overwrites file: output.txt
+  · Installs npm packages (modifies node_modules)
+```
+
+Detected effect categories include file creation and overwriting, copy and move operations, file deletion, folder creation, npm/pip package installs, git push/commit/reset, opening applications, and environment variable assignments. If none of these patterns match, the preview simply states "Runs a process (no filesystem changes detected)."
+
+### Execution Confirmation Flow
+
+Every command requires explicit user approval before it runs. The prompt changes based on whether sandbox mode is on or off:
+
+**Standard mode** — three options:
+```
+  ✔  Yes, run it
+  ✖  Skip this command
+  ⛔  Abort all remaining
+```
+
+**Sandbox mode** — four options:
+```
+  ✔  Confirm & run on PC
+  ✎  Edit before running
+  ✖  Skip this command
+  ⛔  Abort all remaining
+```
+
+Choosing **✎ Edit before running** opens an inline prompt where you can rewrite the command before it runs. The edited version is re-checked against the blocklist before execution.
+
+### AI-Powered Output Explanation
+
+After every command completes, HAN automatically sends the result to the AI and prints a **plain-English explanation** below the stdout/stderr output. You don't need to parse exit codes or decipher cryptic terminal output — HAN tells you what happened, what the output means, and if there's anything you should do next. This explanation is concise (1–3 sentences) and uses no markdown or bullet points.
+
+```
+✔ OK  dir "%USERPROFILE%\Desktop"
+┌── stdout ────────────────────────────
+│  Volume in drive C is Windows
+│  ...
+└──────────────────────────────────────
+  The Desktop folder contains 12 items including 3 directories.
+  Everything looks normal — no errors detected.
+```
+
+### Shell Audit Log
+
+Every command interaction is silently written to **`.shell-audit.log`** in your project root. Each entry is a JSON line containing:
+
+* `ts` — ISO timestamp
+* `status` — one of `ok`, `error`, `timeout`, `blocked`, `skipped`, `aborted`
+* `command` — the exact command string
+* `exitCode` — numeric exit code
+* `stdout` / `stderr` — first 500 characters of output
+
+The log is append-only and non-fatal — if writing fails for any reason, HAN continues without interruption. This gives you a full audit trail of everything HAN has done on your machine.
+
+```json
+{"ts":"2026-01-15T10:23:01.452Z","status":"ok","command":"dir \"%USERPROFILE%\\Desktop\"","exitCode":0,"stdout":"Volume in drive C...","stderr":""}
+{"ts":"2026-01-15T10:23:45.881Z","status":"blocked","command":"rm -rf /"}
+{"ts":"2026-01-15T10:24:12.003Z","status":"skipped","command":"npm install"}
 ```
 
 ### What HAN can do on your machine
@@ -283,8 +368,6 @@ start "" "%USERPROFILE%\Desktop\projects"
 ✔ Done in 1 round
 ```
 
----
-
 ```
 ❯ clone https://github.com/user/repo into my documents
 ```
@@ -292,8 +375,6 @@ start "" "%USERPROFILE%\Desktop\projects"
 cd "%USERPROFILE%\Documents" && git clone https://github.com/user/repo.git
 ✔ Done in 1 round
 ```
-
----
 
 ```
 ❯ find and delete all .tmp files in C:\Temp
@@ -306,12 +387,10 @@ Round 3 → success ✔
 
 ### Limitations to know
 
-- 🪟 Targets **Windows CMD** by default — edit `SYSTEM_GENERATE` in `agents/utils/shell-command.js` for Linux/macOS
-- 🔒 Runs as **your user** — no privilege escalation
-- ⏱️ **10 second timeout** per command — may be too short for large downloads or installs
-- 🚫 **No sandbox or whitelist** — HAN is as powerful (and risky) as your own terminal
-
----
+* 🪟 Targets **Windows CMD** by default — edit `SYSTEM_GENERATE` in `agents/utils/shell-command.js` for Linux/macOS
+* 🔒 Runs as **your user** — no privilege escalation
+* ⏱️ **10 second timeout** per command — may be too short for large downloads or installs
+* 🚫 **No sandbox or whitelist by default** — HAN is as powerful (and risky) as your own terminal
 
 ## 🗄️ NLP to SQL
 
@@ -330,7 +409,33 @@ When paired with a MySQL database, HAN can interpret natural language and conver
 
 Queries with **low confidence** or **ambiguous matches** are flagged before execution. Nothing runs without your go-ahead.
 
----
+## 🧵 Conversation History & Memory
+
+HAN maintains a per-user conversation history with automatic summarization so long conversations don't silently eat your token budget.
+
+### How the rolling window works
+
+The history manager keeps a **recent window of the last 20 messages** in full. When the conversation grows beyond that, the oldest messages are evicted from the window and compressed into a rolling summary that gets prepended to every new request as a system message.
+
+```
+[Summary]
+U:how do I list files | A:Use dir in Windows CMD | U:what about hidden files | A:Add /a flag to dir
+```
+
+Individual messages are truncated at **800 characters** if they're too long, cutting at the last sentence boundary where possible. If the total history payload exceeds **6,000 characters**, older messages are trimmed further from the front until it fits — always preserving at least the two most recent turns for context continuity.
+
+### Memory tuning (advanced)
+
+These defaults live in `agents/response.js` inside the `HistoryManager` constructor and can be adjusted:
+
+| Option | Default | Description |
+|---|---|---|
+| `recentWindow` | `20` | How many messages to keep in full before summarizing |
+| `maxMsgChars` | `800` | Max characters per individual message |
+| `maxTotalChars` | `6000` | Max total character budget for history payload |
+| `maxSummaryChars` | `800` | Max characters for the rolling summary |
+
+Summaries use compressed notation (`U:` for user, `A:` for assistant) to maximize information density within the character budget.
 
 ## 🧩 Skills
 
@@ -342,14 +447,7 @@ agents/skills/
   └── your-skill.md   ← drop any .md here, subfolders supported
 ```
 
-A skill file typically contains:
-- What the skill does
-- Expected input/output format
-- Examples
-
-HAN scans recursively and picks up all `.md` files automatically on next launch. No restart needed if you add a skill while HAN is not running.
-
----
+A skill file typically contains what the skill does, the expected input/output format, and examples. HAN scans recursively and picks up all `.md` files automatically on next launch. Skills are cached in memory after the first load — restart HAN to pick up new files added while it's running.
 
 ## 🗂️ Project Structure
 
@@ -379,12 +477,11 @@ han/
 │   ├── renderer.js            ← markdown stream printer
 │   ├── select.js              ← interactive select menu
 │   └── utils.js               ← shared terminal utilities
+├── .shell-audit.log           ← auto-generated command audit trail
 ├── index.js                   ← conversation entry point
 ├── cli.js                     ← main menu / launcher
 └── setup.js                   ← first-time setup script
 ```
-
----
 
 ## 📋 Config Reference
 
@@ -408,8 +505,6 @@ han/
 | `DATABASE_PASSWORD` | MySQL password |
 | `DATABASE_NAME` | Database name |
 
----
-
 ## 🔄 Reset Configuration
 
 If you need to wipe all settings and start over, go to **⚙ Configure agent → ↩ Reset all settings**, or delete `agents/config.json` and re-run:
@@ -417,8 +512,6 @@ If you need to wipe all settings and start over, go to **⚙ Configure agent →
 ```bash
 npm run setup
 ```
-
----
 
 <div align="center">
 
