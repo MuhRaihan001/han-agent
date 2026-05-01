@@ -1,5 +1,11 @@
+const readline = require('readline');
+const chalk = require('chalk');
+
 const { exec } = require('child_process');
 const { loadConfig } = require('../utils/config');
+const { showSelect } = require('../../UI/select');
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 function runCommand(command, timeoutMs = 10_000) {
     return new Promise((resolve) => {
@@ -49,7 +55,24 @@ async function executeShellCommands(commands, { stopOnError = true } = {}) {
         throw new Error('commands must be a non-empty array.');
 
     const results = [];
+    const dim  = s => chalk.dim(s);
+    const bold = s => chalk.bold(s);
     for (const cmd of commands) {
+
+        const askToRun = await showSelect({
+            rl,
+            title: `Run command?`,
+            message: `Would you like to run:\n${chalk.yellow(cmd)}`,
+            choices: ['Yes', 'No'],
+            helpers: { dim, bold }
+        });
+
+        if (!askToRun || askToRun.value === 'No') {
+            results.push({ command: cmd, stdout: '', stderr: 'User skipped command', exitCode: 0, timedOut: false });
+            rl.close();
+            continue;
+        }
+
         const result = await runCommand(cmd);
         results.push(result);
         if (stopOnError && result.exitCode !== 0) break;
