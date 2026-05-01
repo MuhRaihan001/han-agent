@@ -120,6 +120,7 @@ function askInput(rl, question, { mask = false, validate = null } = {}) {
 
                 process.stdin.on('data', onKey);
             } else {
+                if (process.stdin.isTTY) process.stdin.setRawMode(false);
                 rl.resume();
                 rl.question('', ans => {
                     const val = ans.trim();
@@ -375,6 +376,7 @@ async function main() {
 function pause(rl) {
     return new Promise(resolve => {
         process.stdout.write(dim('  Press Enter to continue…'));
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
         rl.resume();
         rl.once('line', () => resolve());
     });

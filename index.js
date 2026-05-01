@@ -1,28 +1,28 @@
 const readline = require('readline');
-const chalk    = require('chalk');
-const ora      = require('ora');
+const chalk = require('chalk');
+const ora = require('ora');
 
 const { streamModelResponse, historyManager } = require('./agents/response');
 
 const width = () => process.stdout.columns || 80;
-const line  = (char = '─') => char.repeat(width());
-const dim   = (s) => chalk.dim(s);
-const bold  = (s) => chalk.bold(s);
+const line = (char = '─') => char.repeat(width());
+const dim = (s) => chalk.dim(s);
+const bold = (s) => chalk.bold(s);
 const utils = { width, line, dim, bold };
 
 
-const { 
-    printHeader, 
-    printUserMessage, 
-    printAssistantLabel, 
-    printAssistantChunkEnd 
+const {
+    printHeader,
+    printUserMessage,
+    printAssistantLabel,
+    printAssistantChunkEnd
 } = require('./UI/headers');
 
 
-const { 
-    printDivider, 
-    getPromptPrefix, 
-    printError 
+const {
+    printDivider,
+    getPromptPrefix,
+    printError
 } = require('./UI/utils');
 
 const { StreamPrinter } = require('./UI/renderer');
@@ -32,10 +32,25 @@ const USER_ID = 'default-user';
 async function main() {
     printHeader(utils);
 
-    const rl  = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: true
+    });
+
     const ask = () => new Promise(resolve => {
+        // Pastikan raw mode OFF dan echo dikontrol readline saja
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(false);
+        }
+
         process.stdout.write('\n' + getPromptPrefix());
-        rl.once('line', resolve);
+        rl.resume();
+
+        rl.once('line', (input) => {
+            rl.pause();
+            resolve(input);
+        });
     });
 
     while (true) {
@@ -51,9 +66,9 @@ async function main() {
         printUserMessage(input, utils);
         printDivider(utils);
 
-        const spinner   = ora({ text: chalk.dim('Thinking…'), color: 'cyan', spinner: 'dots' }).start();
-        let firstChunk  = true;
-        const printer   = new StreamPrinter(utils);
+        const spinner = ora({ text: chalk.dim('Thinking…'), color: 'cyan', spinner: 'dots' }).start();
+        let firstChunk = true;
+        const printer = new StreamPrinter(utils);
 
         try {
             for await (const chunk of streamModelResponse(USER_ID, input)) {

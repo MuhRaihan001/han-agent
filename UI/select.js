@@ -6,37 +6,48 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
         const dim = helpers.dim || (s => chalk.dim(s));
 
         if (rl) rl.pause();
-        if (process.stdin.isTTY) process.stdin.setRawMode(true);
-        process.stdin.resume();
+
+        // Matikan raw mode dulu sebelum masuk, baru aktifkan
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(false);
+        }
+        process.stdin.pause();
+
+        // Tunda sedikit agar buffer input sebelumnya bersih
+        setImmediate(() => {
+            if (process.stdin.isTTY) {
+                process.stdin.setRawMode(true);
+            }
+            process.stdin.resume();
+            process.stdin.on('data', onKey);
+            render();
+        });
 
         let selectedIndex = 0;
 
-        const termWidth  = process.stdout.columns || 100;
-        const BOX_WIDTH  = Math.min(termWidth - 4, 80);
+        const termWidth = process.stdout.columns || 100;
+        const BOX_WIDTH = Math.min(termWidth - 4, 80);
         const HAS_DETAIL = !!detail;
 
-        // Only split columns when detail is provided
-        const LEFT_WIDTH  = HAS_DETAIL ? Math.floor(BOX_WIDTH * 0.55) : BOX_WIDTH - 2;
+        const LEFT_WIDTH = HAS_DETAIL ? Math.floor(BOX_WIDTH * 0.55) : BOX_WIDTH - 2;
         const RIGHT_WIDTH = HAS_DETAIL ? BOX_WIDTH - LEFT_WIDTH - 3 : 0;
 
-        const BORDER_TOP    = chalk.cyan('╭' + '─'.repeat(BOX_WIDTH) + '╮');
+        const BORDER_TOP = chalk.cyan('╭' + '─'.repeat(BOX_WIDTH) + '╮');
         const BORDER_BOTTOM = chalk.cyan('╰' + '─'.repeat(BOX_WIDTH) + '╯');
-        const BORDER_SEP    = chalk.cyan('├' + '─'.repeat(BOX_WIDTH) + '┤');
+        const BORDER_SEP = chalk.cyan('├' + '─'.repeat(BOX_WIDTH) + '┤');
 
         function padR(str, width) {
             const visible = stripAnsi(str).length;
             return str + ' '.repeat(Math.max(0, width - visible));
         }
 
-        // Single-column row (no detail panel)
         function rowSingle(content) {
             const inner = padR(content, BOX_WIDTH - 1);
             return chalk.cyan('│') + ' ' + inner + chalk.cyan('│');
         }
 
-        // Two-column row (with detail panel)
         function rowDouble(leftContent, rightContent = '') {
-            const l = padR(leftContent,  LEFT_WIDTH);
+            const l = padR(leftContent, LEFT_WIDTH);
             const r = padR(rightContent, RIGHT_WIDTH);
             return chalk.cyan('│') + ' ' + l + chalk.cyan('│') + ' ' + r + ' ' + chalk.cyan('│');
         }
@@ -46,7 +57,6 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
         function buildLines() {
             const lines = [];
 
-            // Title bar
             const titleStr = chalk.bgCyan.black(` ${title} `);
             const titlePad = ' '.repeat(Math.max(0, BOX_WIDTH - stripAnsi(titleStr).length));
             lines.push(chalk.cyan('│') + titleStr + titlePad + chalk.cyan('│'));
@@ -54,16 +64,15 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
             lines.push(BORDER_SEP);
             lines.push(row(''));
 
-            // Message / detail
             const wrapWidth = HAS_DETAIL ? LEFT_WIDTH : BOX_WIDTH - 4;
-            const msgLines  = wrapSimple(message, wrapWidth);
+            const msgLines = wrapSimple(message, wrapWidth);
 
             if (HAS_DETAIL) {
                 const detailLines = [chalk.bold.white(detail), '', ...wrapSimple(detailBody || '', RIGHT_WIDTH)];
-                const rowCount    = Math.max(msgLines.length, detailLines.length);
+                const rowCount = Math.max(msgLines.length, detailLines.length);
                 for (let i = 0; i < rowCount; i++) {
-                    const l = i < msgLines.length    ? chalk.white(msgLines[i]) : '';
-                    const r = i < detailLines.length ? detailLines[i]           : '';
+                    const l = i < msgLines.length ? chalk.white(msgLines[i]) : '';
+                    const r = i < detailLines.length ? detailLines[i] : '';
                     lines.push(rowDouble(l, r));
                 }
             } else {
@@ -74,7 +83,6 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
             lines.push(BORDER_SEP);
             lines.push(row(''));
 
-            // Choices
             choices.forEach((c, i) => {
                 const isSelected = i === selectedIndex;
                 const label = isSelected
@@ -85,7 +93,6 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
 
             lines.push(row(''));
 
-            // Hint
             const hint = dim(' ↑↓ Navigate   Enter: Select   Esc/q: Cancel ');
             lines.push(row(hint));
             lines.push(row(''));
@@ -93,7 +100,7 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
             return lines;
         }
 
-        let rendered  = false;
+        let rendered = false;
         let lineCount = 0;
 
         function render() {
@@ -116,9 +123,21 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
 
         function done(result) {
             process.stdin.removeListener('data', onKey);
-            if (process.stdin.isTTY) process.stdin.setRawMode(false);
-            if (rl) rl.resume();
-            resolve(result);
+
+            // Matikan raw mode, bersihkan buffer, baru serahkan ke readline
+            if (process.stdin.isTTY) {
+                process.stdin.setRawMode(false);
+            }
+            process.stdin.pause();
+
+            // Gunakan setImmediate agar buffer event loop bersih dulu
+            // sebelum readline mengambil alih — ini yang mencegah echo dobel
+            setImmediate(() => {
+                if (rl) {
+                    rl.resume();
+                }
+                resolve(result);
+            });
         }
 
         function onKey(buf) {
@@ -149,9 +168,6 @@ function showSelect({ title, message, detail, detailBody, choices, rl, helpers =
                 setTimeout(() => done({ index: selectedIndex, value: choices[selectedIndex] }), 120);
             }
         }
-
-        process.stdin.on('data', onKey);
-        render();
     });
 }
 
