@@ -53,10 +53,230 @@ function predictEffects(cmd) {
     return matches.length ? matches : ['Runs a process (no filesystem changes detected)'];
 }
 
+// ── Buat rl sekali, jangan close di tengah jalan ───────────────────────────
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 process.on('exit', () => rl.close());
 process.on('SIGINT', () => { rl.close(); process.exit(0); });
+
+// ── Helper: strip ANSI escape codes untuk menghitung panjang prompt yang benar ──
+function stripAnsi(str) {
+    return str.replace(/\x1b\[[0-9;]*[mGKJHF]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+}
+
+// ── Mini Inline Editor ─────────────────────────────────────────────────────
+//
+// Menampilkan command yang sudah ada di baris terminal, user bisa edit langsung:
+//
+//   ←/→           : gerak cursor satu karakter
+//   Ctrl+←/→      : gerak cursor satu kata
+//   Home / Ctrl+A : lompat ke awal baris
+//   End  / Ctrl+E : lompat ke akhir baris
+//   Backspace     : hapus karakter di kiri cursor
+//   Delete        : hapus karakter di kanan cursor
+//   Ctrl+K        : hapus dari cursor hingga akhir baris
+//   Ctrl+U        : hapus dari awal baris hingga cursor
+//   Ctrl+W        : hapus satu kata ke kiri
+//   Enter         : konfirmasi → kembalikan hasil edit
+//   Esc           : batalkan → kembalikan defaultValue
+//   Ctrl+C        : batalkan → kembalikan defaultValue
+//
+function openInlineEditor(prompt, defaultValue = '') {
+    return new Promise((resolve) => {
+        // Pause rl agar tidak konflik konsumsi stdin
+        rl.pause();
+
+        const stdin = process.stdin;
+        const stdout = process.stdout;
+
+        // Aktifkan raw mode agar bisa baca per-karakter (bukan per-baris)
+        if (stdin.isTTY && typeof stdin.setRawMode === 'function') {
+            try { stdin.setRawMode(true); } catch { /* ignore */ }
+        }
+        stdin.resume();
+        stdin.setEncoding('utf8');
+
+        // State editor
+        let buffer = defaultValue.split('');   // array karakter command saat ini
+        let cursor = buffer.length;            // posisi cursor (0 = sebelum karakter pertama)
+
+        // Hitung panjang prompt yang sudah di-strip ANSI (untuk posisi cursor yang akurat)
+        const promptRawLen = stripAnsi(prompt).length;
+
+        // Render ulang baris editor setiap ada perubahan
+        function render() {
+            // \r     = kembali ke kolom 1
+            // \x1b[2K = hapus seluruh baris
+            stdout.write('\r\x1b[2K');
+            stdout.write(prompt + buffer.join(''));
+
+            // Pindah cursor ke posisi edit yang benar
+            // Terminal column dimulai dari 1, bukan 0
+            const col = promptRawLen + cursor + 1;
+            stdout.write(`\x1b[${col}G`);
+        }
+
+        // Tampilkan prompt awal di baris baru
+        stdout.write('\n');
+        render();
+
+        // ── Handler per-karakter ──────────────────────────────────────────
+        function onData(key) {
+            // ── Konfirmasi (Enter / Ctrl+M) ──────────────────────────────
+            if (key === '\r' || key === '\n') {
+                cleanup();
+                stdout.write('\n');
+                resolve(buffer.join('') || defaultValue);
+                return;
+            }
+
+            // ── Batalkan (Esc / Ctrl+C) → kembalikan default ─────────────
+            if (key === '\x1b' || key === '\u0003') {
+                cleanup();
+                // Tulis command default di baris ini agar terminal tidak kosong
+                stdout.write('\r\x1b[2K' + prompt + chalk.dim(defaultValue) + '\n');
+                resolve(defaultValue);
+                return;
+            }
+
+            // ── Backspace (DEL / ^H) ─────────────────────────────────────
+            if (key === '\u007f' || key === '\b') {
+                if (cursor > 0) {
+                    buffer.splice(cursor - 1, 1);
+                    cursor--;
+                }
+                render();
+                return;
+            }
+
+            // ── Escape sequences (arrow keys, Home, End, Delete key) ─────
+            if (key.length > 1 && key.startsWith('\x1b')) {
+                const seq = key.slice(1); // bagian setelah ESC
+
+                switch (seq) {
+                    // Arrow kiri
+                    case '[D':
+                    case 'OD':
+                        if (cursor > 0) cursor--;
+                        break;
+
+                    // Arrow kanan
+                    case '[C':
+                    case 'OC':
+                        if (cursor < buffer.length) cursor++;
+                        break;
+
+                    // Ctrl + Arrow kiri (loncat kata ke kiri)
+                    case '[1;5D':
+                    case 'b': {
+                        // Lewati spasi, lalu lewati kata
+                        while (cursor > 0 && buffer[cursor - 1] === ' ') cursor--;
+                        while (cursor > 0 && buffer[cursor - 1] !== ' ') cursor--;
+                        break;
+                    }
+
+                    // Ctrl + Arrow kanan (loncat kata ke kanan)
+                    case '[1;5C':
+                    case 'f': {
+                        while (cursor < buffer.length && buffer[cursor] === ' ') cursor++;
+                        while (cursor < buffer.length && buffer[cursor] !== ' ') cursor++;
+                        break;
+                    }
+
+                    // Home
+                    case '[H':
+                    case 'OH':
+                    case '[1~':
+                        cursor = 0;
+                        break;
+
+                    // End
+                    case '[F':
+                    case 'OF':
+                    case '[4~':
+                        cursor = buffer.length;
+                        break;
+
+                    // Delete key (hapus karakter di kanan cursor)
+                    case '[3~':
+                        if (cursor < buffer.length) buffer.splice(cursor, 1);
+                        break;
+                }
+
+                render();
+                return;
+            }
+
+            // ── Ctrl shortcuts ────────────────────────────────────────────
+
+            // Ctrl+A → ke awal baris
+            if (key === '\u0001') {
+                cursor = 0;
+                render();
+                return;
+            }
+
+            // Ctrl+E → ke akhir baris
+            if (key === '\u0005') {
+                cursor = buffer.length;
+                render();
+                return;
+            }
+
+            // Ctrl+K → hapus dari cursor ke akhir
+            if (key === '\u000b') {
+                buffer = buffer.slice(0, cursor);
+                render();
+                return;
+            }
+
+            // Ctrl+U → hapus dari awal ke cursor
+            if (key === '\u0015') {
+                buffer = buffer.slice(cursor);
+                cursor = 0;
+                render();
+                return;
+            }
+
+            // Ctrl+W → hapus satu kata ke kiri
+            if (key === '\u0017') {
+                // Lewati spasi dulu
+                while (cursor > 0 && buffer[cursor - 1] === ' ') {
+                    buffer.splice(--cursor, 1);
+                }
+                // Hapus sampai spasi berikutnya
+                while (cursor > 0 && buffer[cursor - 1] !== ' ') {
+                    buffer.splice(--cursor, 1);
+                }
+                render();
+                return;
+            }
+
+            // ── Abaikan karakter kontrol yang tidak dikenali ──────────────
+            if (key.charCodeAt(0) < 32) return;
+
+            // ── Karakter biasa → sisipkan di posisi cursor ────────────────
+            // Mendukung paste (key bisa berisi banyak karakter sekaligus)
+            const chars = key.split('').filter(c => c.charCodeAt(0) >= 32);
+            if (chars.length === 0) return;
+
+            buffer.splice(cursor, 0, ...chars);
+            cursor += chars.length;
+            render();
+        }
+
+        // ── Bersihkan listener dan kembalikan terminal ke keadaan normal ──
+        function cleanup() {
+            stdin.removeListener('data', onData);
+            if (stdin.isTTY && typeof stdin.setRawMode === 'function') {
+                try { stdin.setRawMode(false); } catch { /* ignore */ }
+            }
+            rl.resume();
+        }
+
+        stdin.on('data', onData);
+    });
+}
 
 function runCommand(command, timeoutMs = 10_000) {
     return new Promise((resolve) => {
@@ -150,7 +370,7 @@ async function executeShellCommands(commands, { stopOnError = true, sandbox = fa
 
         const choices = sandbox
             ? ['✔  Confirm & run on PC', '✎  Edit before running', '✖  Skip this command', '⛔  Abort all remaining']
-            : ['✔  Yes, run it', '✖  Skip this command', '⛔  Abort all remaining'];
+            : ['✔  Yes, run it', '✎  Edit before running', '✖  Skip this command', '⛔  Abort all remaining'];
 
         const choice = await showSelect({
             rl,
@@ -177,12 +397,31 @@ async function executeShellCommands(commands, { stopOnError = true, sandbox = fa
         }
 
         let finalCmd = cmd;
+
         if (choice.value.startsWith('✎')) {
-            finalCmd = await new Promise(resolve => {
-                rl.question(chalk.yellow('  Edit command: '), answer => {
-                    resolve(answer.trim() || cmd);
-                });
-            });
+            console.log();
+
+            // Tampilkan hint shortcut di atas editor
+            console.log(
+                dim('  ') +
+                chalk.bgHex('#1a1a2e').white(' ✎ Inline Editor ') +
+                '  ' +
+                dim('←/→ gerak  ') +
+                dim('Home/End  ') +
+                dim('Ctrl+K hapus ke akhir  ') +
+                dim('Ctrl+W hapus kata  ') +
+                dim('Enter konfirmasi  ') +
+                dim('Esc batal')
+            );
+
+            // Buka inline editor dengan command lama sebagai nilai awal
+            const edited = await openInlineEditor(
+                chalk.yellow('  ✎ ') + chalk.bold.white('$ '),
+                cmd
+            );
+
+            finalCmd = edited || cmd;
+
             if (isBlocked(finalCmd)) {
                 console.log(chalk.bgRed.white(' ⛔ BLOCKED ') + '  ' + chalk.red('Edited command also blocked.'));
                 writeAuditLog({ status: 'blocked', command: finalCmd, original: cmd });
@@ -190,6 +429,9 @@ async function executeShellCommands(commands, { stopOnError = true, sandbox = fa
                 if (stopOnError) break;
                 continue;
             }
+
+            // Tampilkan command final yang akan dijalankan
+            console.log(dim('  $ ') + chalk.greenBright(finalCmd));
         }
 
         const spinner = require('ora')({
@@ -239,17 +481,17 @@ async function executeShellCommands(commands, { stopOnError = true, sandbox = fa
             console.log(chalk.dim('└' + '─'.repeat(termW() - 3)));
         }
 
-        const explanation = await explainOutput(finalCmd, result.stdout, result.stderr, result.exitCode);
-        
-        console.log();
-        console.log(chalk.bgHex('#1a1a2e').cyan + '  ' + chalk.cyan(explanation));
-        
-
         if (!result.stdout && !result.stderr) {
             console.log(dim('  (no output)'));
         }
 
-        // Store with potentially edited command
+        const explanation = await explainOutput(finalCmd, result.stdout, result.stderr, result.exitCode);
+        if (explanation) {
+            console.log();
+            const badge = chalk.bgHex('#1a1a2e').white(' 💡 ');
+            console.log(badge + '  ' + chalk.cyan(explanation));
+        }
+
         results.push({ ...result, command: finalCmd });
 
         if (stopOnError && result.exitCode !== 0) {
@@ -277,20 +519,30 @@ Given a command and its output, explain in 1-3 short sentences:
 Be concise and friendly. No markdown, no bullet points, plain text only.`;
 
 async function explainOutput(command, stdout, stderr, exitCode) {
-    try {
-        const { model, modelname } = await _buildModel();
-        const content = `Command: ${command}\nExit code: ${exitCode}\nStdout: ${stdout || '(empty)'}\nStderr: ${stderr || '(empty)'}`;
-        const raw = await model.generateResponse(
-            [
-                { role: 'dev', content: SYSTEM_EXPLAIN },
-                { role: 'user', content: content }
-            ],
-            modelname
-        );
-        return raw.trim();
-    } catch {
-        return null; // non-fatal, skip silently
-    }
+    const TIMEOUT_MS = 8_000;
+
+    const timeoutPromise = new Promise((resolve) =>
+        setTimeout(() => resolve(null), TIMEOUT_MS)
+    );
+
+    const explainPromise = new Promise(async (resolve) => {
+        try {
+            const { model, modelname } = await _buildModel();
+            const content = `Command: ${command}\nExit code: ${exitCode}\nStdout: ${stdout || '(empty)'}\nStderr: ${stderr || '(empty)'}`;
+            const raw = await model.generateResponse(
+                [
+                    { role: 'dev', content: SYSTEM_EXPLAIN },
+                    { role: 'user', content: content }
+                ],
+                modelname
+            );
+            resolve(raw?.trim() || null);
+        } catch {
+            resolve(null);
+        }
+    });
+
+    return Promise.race([explainPromise, timeoutPromise]);
 }
 
 
@@ -316,6 +568,7 @@ GOOD (USE THESE): type, dir, del, findstr, notepad, echo`;
 
 const SYSTEM_CHECK = `OUTPUT RULES: Reply ONLY with raw JSON. No markdown, no backticks, no prose.
 Valid responses: {"done":true} or {"done":false,"next":"<remaining task description>"}`;
+
 async function askAiForCommands(request, context = '') {
     const { model, modelname } = await _buildModel();
     const userContent = context ? `${request}\n\nPrev output:\n${context}` : request;
@@ -395,7 +648,7 @@ async function executeWithContext(naturalRequest, { maxRounds = 3, stopOnError =
             );
             check = parseJson(checkRaw);
         } catch {
-            break;  // can't parse check response — assume done
+            break;
         }
 
         if (check.done) break;

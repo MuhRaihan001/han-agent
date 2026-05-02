@@ -65,6 +65,7 @@ async function main() {
         choices: [
             '⚡  Start conversation',
             '⚙   Configure agent',
+            '⚔   Manage skills',
             '✖   Exit',
         ],
         helpers: { dim, bold },
@@ -85,7 +86,11 @@ async function main() {
     } else if (choice.startsWith('⚡')) {
         rl.close();
         require('./index');
-    } else if (choice.startsWith('⚙')) {
+    } else if (choice.startsWith('⚔')) {
+        rl.close();
+        require('./agents/skills');
+    } 
+    else if (choice.startsWith('⚙')) {
         rl.close();
         require('./agents/configure');
     }

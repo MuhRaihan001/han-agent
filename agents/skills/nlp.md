@@ -18,7 +18,7 @@ When a user gives a command in plain language (e.g. *"mark my task as done"*), t
 ## Output Format (JSON)
 
 This skill always responds with the following structure:
-
+a
 ```json
 {
   "actions": [

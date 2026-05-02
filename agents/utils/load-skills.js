@@ -6,12 +6,11 @@ let cachedSkills = null;
 
 async function loadSkillsRecursive(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-
     const results = await Promise.all(
         entries.map(async (entry) => {
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
-                return loadSkillsRecursive(fullPath); // ← masuk subfolder
+                return loadSkillsRecursive(fullPath);
             } else if (entry.isFile() && entry.name.endsWith('.md')) {
                 const skillName = path.basename(entry.name, '.md');
                 const content = await fs.readFile(fullPath, 'utf-8');
@@ -20,7 +19,6 @@ async function loadSkillsRecursive(dir) {
             return [];
         })
     );
-
     return results.flat();
 }
 
@@ -34,4 +32,30 @@ async function getSkillsContext() {
     return cachedSkills;
 }
 
-module.exports = { getSkillsContext };
+async function createNewSkill(name, content) {
+    if (!name || !content) throw new Error('Skill name and content are required.');
+
+    const safeName = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+
+    const filePath = path.join(skillsFolder, `${safeName}.md`);
+
+    try {
+        await fs.access(filePath);
+        throw new Error('Skill already exists.');
+    } catch (err) {
+        if (err.message === 'Skill already exists.') throw err;
+    }
+
+    await fs.writeFile(filePath, content, 'utf-8');
+    return filePath;
+}
+
+function invalidateCache() {
+    cachedSkills = null;
+}
+
+module.exports = { getSkillsContext, createNewSkill, invalidateCache };

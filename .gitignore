@@ -1,4 +1,5 @@
 .env
+.shell-audit.log
 node_modules/
 agents/config.json
 agents/skills/introduction.md
