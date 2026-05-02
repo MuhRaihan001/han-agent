@@ -68,7 +68,7 @@ Responses appear in real-time with a typewriter effect, markdown rendering, and 
 <td width="50%">
 
 ### 🧩 Skill System
-Drop a `.md` file into `agents/skills/` and HAN immediately gains new capabilities — no restarts, no code changes.
+Drop a `.md` file into `agents/skills/` and HAN immediately gains new capabilities — no restarts, no code changes. Manage skills interactively from the main menu.
 
 </td>
 <td width="50%">
@@ -176,7 +176,8 @@ If you prefer editing directly, `agents/config.json` is created by `npm run setu
     "claude-api-key":   "sk-ant-...",
     "gemini-api-key":   "",
     "openai-api-key":   "",
-    "stream-response":  true
+    "stream-response":  true,
+    "sandbox":          false
 }
 ```
 
@@ -202,6 +203,47 @@ DATABASE_USER=root
 DATABASE_PASSWORD=yourpassword
 DATABASE_NAME=yourdb
 ```
+
+## 🧩 Skill Manager
+
+Skills are plain `.md` files that get injected into every system prompt, teaching HAN how to behave for specific tasks. HAN includes a full **interactive Skill Manager** accessible from the main menu under **⚔ Manage skills**.
+
+### What you can do
+
+From the Skill Manager menu you can add a new skill, edit an existing skill, view a skill's content with syntax highlighting, list all skills with line and character counts, and delete a skill with confirmation.
+
+### Adding a skill
+
+Select **Add skill**, enter a name, and a full-screen **inline editor** opens directly in your terminal. The editor supports the following keyboard shortcuts:
+
+| Key | Action |
+|---|---|
+| Arrow keys | Move cursor |
+| Home / End | Jump to start or end of line |
+| Page Up / Down | Scroll by screen height |
+| Ctrl+S | Mark as saved (in-memory) |
+| Ctrl+W | Save and exit |
+| Ctrl+X or Ctrl+C | Exit without saving |
+
+The editor shows line numbers, a modified indicator (● yellow when unsaved, ✔ green when clean), and the current line and column in the status bar. It handles horizontal scrolling automatically when a line exceeds the terminal width.
+
+### Editing a skill
+
+Select **Edit skill**, choose from the list, and the same full-screen editor opens pre-loaded with the existing content. A `.bak` backup of the original file is written before saving.
+
+### Skill file location
+
+```
+agents/skills/
+  ├── nlp.md          ← built-in: NLP-to-SQL
+  └── your-skill.md   ← drop any .md here, subfolders supported
+```
+
+Skills are loaded recursively — subfolders work fine. The skill cache is invalidated automatically after any add, edit, or delete operation so the next conversation picks up the changes immediately without restarting HAN.
+
+### Writing a good skill
+
+A skill file typically contains three sections: what the skill does, the expected input and output format, and concrete examples with sample input and output. The more specific the examples, the more reliably HAN will apply the skill. See `agents/skills/nlp.md` for a reference implementation.
 
 ## 💻 Shell Command Execution
 
@@ -281,7 +323,20 @@ Every generated command passes through a **hardcoded blocklist** before it is ev
 
 Blocked commands are flagged in the terminal with a ⛔ badge and written to the audit log. They are never sent to the shell.
 
-### Sandbox Mode & Effect Prediction
+### Sandbox Mode
+
+Sandbox mode adds a **preview step** before every command runs, showing you the predicted side effects so you can decide whether to proceed, edit, or skip.
+
+**Enable sandbox mode** by typing `sandbox` at the conversation prompt:
+
+```
+❯ sandbox
+🧪 SANDBOX MODE ENABLED
+```
+
+This sets `"sandbox": true` in `agents/config.json` and persists across restarts. To disable it, set `"sandbox": false` manually in the config file.
+
+### Effect Prediction
 
 When sandbox mode is enabled, HAN runs `predictEffects()` on each command before asking for your confirmation. It scans the command text and tells you exactly what side effects to expect — before anything touches your machine:
 
@@ -312,11 +367,15 @@ Every command requires explicit user approval before it runs. The prompt changes
   ⛔  Abort all remaining
 ```
 
-Choosing **✎ Edit before running** opens an inline prompt where you can rewrite the command before it runs. The edited version is re-checked against the blocklist before execution.
+### Inline Command Editor
+
+Choosing **✎ Edit before running** opens a single-line inline editor where you can rewrite the command before it runs. The editor supports the same rich keyboard shortcuts as the Skill Manager's full-screen editor — arrow keys, Ctrl+←/→ for word jumping, Home/End, Backspace, Delete, Ctrl+K to clear to end of line, Ctrl+U to clear to start, and Ctrl+W to delete the previous word. Paste support works as well; multi-character clipboard content is inserted at the cursor position in one operation.
+
+The edited command is re-checked against the blocklist before execution.
 
 ### AI-Powered Output Explanation
 
-After every command completes, HAN automatically sends the result to the AI and prints a **plain-English explanation** below the stdout/stderr output. You don't need to parse exit codes or decipher cryptic terminal output — HAN tells you what happened, what the output means, and if there's anything you should do next. This explanation is concise (1–3 sentences) and uses no markdown or bullet points.
+After every command completes, HAN automatically sends the result to the AI and prints a **plain-English explanation** below the stdout/stderr output. You don't need to parse exit codes or decipher cryptic terminal output — HAN tells you what happened, what the output means, and if there's anything you should do next. This explanation is concise (1–3 sentences) and uses no markdown or bullet points. If the AI takes longer than 8 seconds to respond, the explanation step is silently skipped so it never blocks your workflow.
 
 ```
 ✔ OK  dir "%USERPROFILE%\Desktop"
@@ -409,6 +468,14 @@ When paired with a MySQL database, HAN can interpret natural language and conver
 
 Queries with **low confidence** or **ambiguous matches** are flagged before execution. Nothing runs without your go-ahead.
 
+### JOIN support
+
+The NLP engine supports LEFT, RIGHT, INNER, and FULL JOIN operations on SELECT queries. When a join is needed, columns and WHERE clauses are automatically prefixed with the table name (e.g. `work.id`, `proyek.name`). JOIN is not permitted on INSERT, UPDATE, or DELETE operations.
+
+### Confidence and ambiguity
+
+Every generated action carries a `confidence` score from 0.0 to 1.0 and an `ambiguity_level` of `low`, `medium`, or `high`. Actions with confidence below 0.8 or ambiguity above `low` are routed to a confirmation queue and will not execute until you approve them. A maximum of 5 actions can be generated per request.
+
 ## 🧵 Conversation History & Memory
 
 HAN maintains a per-user conversation history with automatic summarization so long conversations don't silently eat your token budget.
@@ -437,18 +504,6 @@ These defaults live in `agents/response.js` inside the `HistoryManager` construc
 
 Summaries use compressed notation (`U:` for user, `A:` for assistant) to maximize information density within the character budget.
 
-## 🧩 Skills
-
-Skills are plain `.md` files that get injected into every system prompt. They teach HAN how to behave for specific tasks.
-
-```
-agents/skills/
-  ├── nlp.md          ← built-in: NLP-to-SQL
-  └── your-skill.md   ← drop any .md here, subfolders supported
-```
-
-A skill file typically contains what the skill does, the expected input/output format, and examples. HAN scans recursively and picks up all `.md` files automatically on next launch. Skills are cached in memory after the first load — restart HAN to pick up new files added while it's running.
-
 ## 🗂️ Project Structure
 
 ```
@@ -464,10 +519,11 @@ han/
 │   │   ├── config.js          ← read/write agents/config.json
 │   │   ├── history.js         ← conversation memory & summarization
 │   │   ├── insturctor.js      ← NLP-to-SQL engine
-│   │   ├── load-skills.js     ← recursive skill loader
+│   │   ├── load-skills.js     ← recursive skill loader with cache invalidation
 │   │   └── shell-command.js   ← PC execution engine ⚡
 │   ├── configure.js           ← interactive config CLI
-│   └── response.js            ← main AI pipeline
+│   ├── response.js            ← main AI pipeline
+│   └── skills.js              ← interactive Skill Manager CLI
 ├── core/
 │   └── utils/
 │       ├── deploySQL.js       ← MySQL connection pool
@@ -495,6 +551,7 @@ han/
 | `gemini-api-key` | `string` | Google API key |
 | `openai-api-key` | `string` | OpenAI API key |
 | `stream-response` | `boolean` | Typewriter streaming output (`true` / `false`) |
+| `sandbox` | `boolean` | Sandbox mode — preview command effects before execution |
 
 ### `.env`
 

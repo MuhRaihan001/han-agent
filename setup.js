@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
     'gemini-api-key': '',
     'claude-api-key': '',
     'openai-api-key': '',
-    'steam': true,
+    'steam-response': true,
     'sandbox': false
 };
 
