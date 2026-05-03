@@ -360,8 +360,8 @@ async function main() {
         } else if (choice.includes('Reset')) {
             await pageResetConfig(rl);
         } else if (choice.includes('Back')) {
-            delete require.cache[require.resolve('../cli')];
-            require('../cli');
+            delete require.cache[require.resolve('../index')];
+            require('../index');
             return;
         } else {
             break; // Back
@@ -370,7 +370,7 @@ async function main() {
 
     rl.close();
 
-    require('../cli');
+    require('../index');
 }
 
 function pause(rl) {

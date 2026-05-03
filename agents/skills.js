@@ -448,7 +448,7 @@ async function skillManager() {
         });
 
         if (!choice || choice.index === 5) {
-            delete require.cache[require.resolve('../cli')]; require('../cli');
+            delete require.cache[require.resolve('../index')]; require('../index');
             rl.close(); return;
         }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const path = require('path');
 const fs = require('fs/promises');
+const chalk = require('chalk');
 
 const PATHS = {
     config: path.join(__dirname, 'agents/config.json'),
@@ -38,6 +39,7 @@ async function touchFile(filePath, content, successMessage) {
 async function touchDir(dirPath, successMessage) {
     try {
         await fs.access(dirPath);
+        console.log(chalk.yellow(`✔️ ${dirPath} exists.`));
     } catch {
         await fs.mkdir(dirPath, { recursive: true });
         console.log(`✔️ ${successMessage}`);
@@ -66,3 +68,5 @@ async function setup() {
 }
 
 setup();
+delete require.cache[require.resolve('./index')];
+require('./index');

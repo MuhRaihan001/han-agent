@@ -68,7 +68,7 @@ Responses appear in real-time with a typewriter effect, markdown rendering, and 
 <td width="50%">
 
 ### 🧩 Skill System
-Drop a `.md` file into `agents/skills/` and HAN immediately gains new capabilities — no restarts, no code changes. Manage skills interactively from the main menu.
+Drop a `.md` file into `skills/` and HAN immediately gains new capabilities — no restarts, no code changes. Manage skills interactively from the main menu.
 
 </td>
 <td width="50%">
@@ -80,31 +80,27 @@ Rolling context window with automatic summarization keeps conversations coherent
 </tr>
 </table>
 
-## ⚡ Quick Start
-
-```bash
+⚡ Quick Start
 # 1. Clone the repo
-git clone https://github.com/TsumuX/han.git
+git clone https://github.com/MuhRaihan001/han-agent.git
 cd han
 
-# 2. Install dependencies
-npm install
-
-# 3. Run first-time setup
-#    This creates agents/config.json, .env, and agents/skills/
-npm run setup
-
-# 4. Launch HAN
+# 2. Run HAN (dependencies will be installed automatically on first run)
 npm start
-```
 
-On first launch, go to **⚙ Configure agent** to set your API key, provider, and model before starting a conversation.
+On first run, HAN will:
+
+Automatically install required dependencies
+Create agents/config.json, .env, and skills/ folder
+Guide you to configure your API key and model
+
+On first launch, go to **🛠   Run setup (create config and skills folder)** to run the first setup
+Then, go to **⚙ Configure agent** to set your API key, provider, and model before starting a conversation.
 
 > **Global install** — use HAN from anywhere:
 > ```bash
 > npm install -g .
 > start-han   # launch
-> setup-han   # re-run first-time setup
 > ```
 
 ## ⚙️ Configuration
@@ -208,6 +204,8 @@ DATABASE_NAME=yourdb
 
 Skills are plain `.md` files that get injected into every system prompt, teaching HAN how to behave for specific tasks. HAN includes a full **interactive Skill Manager** accessible from the main menu under **⚔ Manage skills**.
 
+Skill files live in the **`skills/`** folder at the project root (not `agents/skills/`). They are loaded **recursively**, so subdirectories are supported.
+
 ### What you can do
 
 From the Skill Manager menu you can add a new skill, edit an existing skill, view a skill's content with syntax highlighting, list all skills with line and character counts, and delete a skill with confirmation.
@@ -234,7 +232,7 @@ Select **Edit skill**, choose from the list, and the same full-screen editor ope
 ### Skill file location
 
 ```
-agents/skills/
+skills/
   ├── nlp.md          ← built-in: NLP-to-SQL
   └── your-skill.md   ← drop any .md here, subfolders supported
 ```
@@ -243,7 +241,7 @@ Skills are loaded recursively — subfolders work fine. The skill cache is inval
 
 ### Writing a good skill
 
-A skill file typically contains three sections: what the skill does, the expected input and output format, and concrete examples with sample input and output. The more specific the examples, the more reliably HAN will apply the skill. See `agents/skills/nlp.md` for a reference implementation.
+A skill file typically contains three sections: what the skill does, the expected input and output format, and concrete examples with sample input and output. The more specific the examples, the more reliably HAN will apply the skill. See `skills/nlp.md` for a reference implementation.
 
 ## 💻 Shell Command Execution
 
@@ -355,6 +353,7 @@ Every command requires explicit user approval before it runs. The prompt changes
 **Standard mode** — three options:
 ```
   ✔  Yes, run it
+  ✎  Edit before running
   ✖  Skip this command
   ⛔  Abort all remaining
 ```
@@ -514,11 +513,10 @@ han/
 │   │   ├── Anthropic.js       ← Claude
 │   │   ├── Google.js          ← Gemini
 │   │   └── OpenAi.js          ← GPT
-│   ├── skills/                ← drop .md skill files here
 │   ├── utils/
 │   │   ├── config.js          ← read/write agents/config.json
 │   │   ├── history.js         ← conversation memory & summarization
-│   │   ├── insturctor.js      ← NLP-to-SQL engine
+│   │   ├── insturctor.js      ← NLP-to-SQL engine (Instructor class)
 │   │   ├── load-skills.js     ← recursive skill loader with cache invalidation
 │   │   └── shell-command.js   ← PC execution engine ⚡
 │   ├── configure.js           ← interactive config CLI
@@ -527,16 +525,20 @@ han/
 ├── core/
 │   └── utils/
 │       ├── deploySQL.js       ← MySQL connection pool
-│       └── files.js           ← filesystem helpers
+│       └── files.js           ← filesystem helpers (getFiles, readFile, etc.)
 ├── UI/
 │   ├── headers.js             ← terminal header & label renderers
-│   ├── renderer.js            ← markdown stream printer
+│   ├── main.js                ← conversation loop & input handler
+│   ├── renderer.js            ← markdown stream printer (StreamPrinter)
 │   ├── select.js              ← interactive select menu
 │   └── utils.js               ← shared terminal utilities
+├── skills/                    ← drop .md skill files here (root-level)
+│   └── nlp.md                 ← built-in NLP-to-SQL skill
 ├── .shell-audit.log           ← auto-generated command audit trail
-├── index.js                   ← conversation entry point
-├── cli.js                     ← main menu / launcher
-└── setup.js                   ← first-time setup script
+├── cli.js                     ← entry point with auto npm install
+├── index.js                   ← main menu
+├── setup.js                   ← first-time setup script
+└── package.json
 ```
 
 ## 📋 Config Reference
@@ -569,6 +571,8 @@ If you need to wipe all settings and start over, go to **⚙ Configure agent →
 ```bash
 npm run setup
 ```
+
+You can also re-run setup at any time from the main menu by selecting **🛠 Run setup** — this safely creates any missing files and folders without overwriting existing ones.
 
 <div align="center">
 
