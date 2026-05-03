@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 
-const skillsFolder = path.join(__dirname, '../skills');
+const skillsFolder = path.join(__dirname, '../../skills');
 let cachedSkills = null;
 
 async function loadSkillsRecursive(dir) {

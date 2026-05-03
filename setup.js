@@ -5,7 +5,7 @@ const fs = require('fs/promises');
 const PATHS = {
     config: path.join(__dirname, 'agents/config.json'),
     env: path.join(__dirname, '.env'),
-    skills: path.join(__dirname, 'agents/skills'),
+    skills: path.join(__dirname, 'skills'),
 };
 
 const DEFAULT_CONFIG = {
@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
     'gemini-api-key': '',
     'claude-api-key': '',
     'openai-api-key': '',
-    'steam-response': true,
+    'stream-response': true,
     'sandbox': false
 };
 
@@ -62,7 +62,7 @@ async function setup() {
         'Created skills folder. Add your .md skill files here.'
     );
 
-    console.log('✔️ Setup complete. You can now run the agents with "npm start" or "start-ryux".');
+    console.log('✔️ Setup complete. You can now run the agents with "npm start" or "start-han".');
 }
 
 setup();

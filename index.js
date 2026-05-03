@@ -1,103 +1,102 @@
 const readline = require('readline');
 const chalk = require('chalk');
-const ora = require('ora');
-const { streamModelResponse, historyManager } = require('./agents/response');
+const { printHeader } = require('./UI/headers');
+const { showSelect } = require('./UI/select');
+const { loadConfig, getProviderColor } = require('./UI/utils');
 
-const width = () => process.stdout.columns || 80;
-const line = (char = '─') => char.repeat(width());
-const dim = (s) => chalk.dim(s);
-const bold = (s) => chalk.bold(s);
-const utils = { width, line, dim, bold };
+const dim = s => chalk.dim(s);
+const bold = s => chalk.bold(s);
 
+const termWidth = () => process.stdout.columns || 100;
+const line = () => '─'.repeat(termWidth() - 2);
 
-const {
-    printHeader,
-    printUserMessage,
-    printAssistantLabel,
-    printAssistantChunkEnd
-} = require('./UI/headers');
+function printBanner() {
 
+    const cfg = loadConfig();
+    const provider = cfg['current-provider'] || 'unknown';
+    const model = cfg['current-models'] || 'unknown';
+    const pColor = getProviderColor(provider);
 
-const {
-    printDivider,
-    getPromptPrefix,
-    printError
-} = require('./UI/utils');
+    const w = Math.min(termWidth() - 4, 80);
+    const colLeft = Math.floor((w - 3) / 2);
+    const colRight = w - colLeft - 3;
 
-const { StreamPrinter } = require('./UI/renderer');
-const { saveConfig, loadConfig } = require('./agents/utils/config');
+    function padR(str, width) {
+        const v = str.replace(/\x1B\[[0-9;]*m/g, '').length;
+        return str + ' '.repeat(Math.max(0, width - v));
+    }
 
-const USER_ID = 'default-user';
+    function infoRow(label, value) {
+        const l = padR(dim(label), colLeft);
+        const r = padR(value, colRight);
+        return chalk.cyan('│') + ' ' + l + chalk.cyan('│') + ' ' + r + ' ' + chalk.cyan('│');
+    }
+
+    const topSep = chalk.cyan('╭' + '─'.repeat(w) + '╮');
+    const midSep = chalk.cyan('├' + '─'.repeat(w) + '┤');
+    const botSep = chalk.cyan('╰' + '─'.repeat(w) + '╯');
+
+    const hdrText = ' ⚙  Active configuration';
+    const hdrPad = ' '.repeat(Math.max(0, w - hdrText.length));
+    const hdrLine = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
+
+    const statusText = model === 'unknown' || provider === 'unknown' ? chalk.red('● not configured') : chalk.green('● ready');
+
+    console.log(topSep);
+    console.log(hdrLine);
+    console.log(midSep);
+    console.log(infoRow('Provider', pColor(`[${provider}]`)));
+    console.log(infoRow('Model', chalk.yellow(model)));
+    console.log(infoRow('Status', statusText));
+    console.log(botSep);
+    console.log();
+}
 
 async function main() {
-    printHeader(utils);
+    printBanner();
 
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        terminal: false
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+    const result = await showSelect({
+        rl,
+        title: '✦  Main Menu',
+        message: 'What would you like to do?',
+        choices: [
+            '⚡  Start conversation',
+            '⚙   Configure agent',
+            '⚔   Manage skills',
+            '🛠   Run setup (create config and skills folder)',
+            '✖   Exit',
+        ],
+        helpers: { dim, bold },
     });
 
-    const ask = () => new Promise(resolve => {
-        // Pastikan raw mode OFF dan echo dikontrol readline saja
-        if (process.stdin.isTTY) {
-            process.stdin.setRawMode(false);
-        }
+    if (!result) {
+        console.log('\n' + dim('Cancelled.'));
+        rl.close();
+        return;
+    }
 
-        process.stdout.write('\n' + getPromptPrefix());
-        rl.resume();
+    const choice = result.value.trim();
 
-        rl.once('line', (input) => {
-            process.stdout.write('\x1B[1A\x1B[2K');
-            rl.pause();
-            resolve(input);
-        });
-    });
-
-    while (true) {
-        const input = await ask();
-        if (!input.trim()) continue;
-
-        if (input.trim().toLowerCase() === 'exit') {
-            console.log('\n' + dim('Goodbye.\n'));
-            rl.close();
-            break;
-        }
-
-        if (input.trim().toLowerCase() === 'sandbox') {
-            console.log('\n' + chalk.bgHex('#1a3a5c').white(' 🧪 SANDBOX MODE ENABLED '));
-            saveConfig({ sandbox: true });
-            continue;
-        }
-
-        printUserMessage(input, utils);
-        printDivider(utils);
-
-        const spinner = ora({ text: chalk.dim('Thinking…'), color: 'cyan', spinner: 'dots' }).start();
-        let firstChunk = true;
-        const printer = new StreamPrinter(utils);
-
-        try {
-            for await (const chunk of streamModelResponse(USER_ID, input)) {
-                if (firstChunk) {
-                    spinner.stop();
-                    printAssistantLabel(utils);
-                    firstChunk = false;
-                }
-                printer.write(chunk);
-            }
-
-            printer.flush();
-            const stats = historyManager.stats(USER_ID);
-            printAssistantChunkEnd(utils, stats);
-
-        } catch (err) {
-            spinner.stop();
-            printError(err.message || String(err));
-        }
-
-        printDivider(utils);
+    if (choice.startsWith('✖')) {
+        console.log('\n' + chalk.cyan('Goodbye! ') + dim('See you next time.\n'));
+        rl.close();
+        process.exit(0);
+    } else if (choice.startsWith('⚡')) {
+        rl.close();
+        require('./UI/main');
+    } else if (choice.startsWith('⚔')) {
+        rl.close();
+        require('./agents/skills');
+    } 
+    else if (choice.startsWith('⚙')) {
+        rl.close();
+        require('./agents/configure');
     }
 }
 
-main().catch(console.error);
+main().catch(err => {
+    console.error(chalk.red('Fatal error: ') + err.message);
+    process.exit(1);
+});

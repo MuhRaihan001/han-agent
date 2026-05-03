@@ -6,7 +6,7 @@ const { showSelect } = require('../UI/select');
 const { stripAnsi } = require('../UI/utils');
 const { invalidateCache } = require('./utils/load-skills');
 
-const SKILLS_DIR = path.join(__dirname, 'skills');
+const SKILLS_DIR = path.join(__dirname, '../skills');
 
 function ensureSkillsDir() {
     if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });

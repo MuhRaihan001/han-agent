@@ -3,8 +3,7 @@
   "type": "commonjs",
   "version": "1.0.0",
   "bin": {
-    "start-han": "./cli.js",
-    "setup-han": "./setup.js"
+    "start-han": "./cli.js"
   },
   "description": "Remake Version of previous ryux",
   "main": "index.js",
