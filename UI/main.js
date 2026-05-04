@@ -65,8 +65,17 @@ async function main() {
         }
 
         if (input.trim().toLowerCase() === 'sandbox') {
-            console.log('\n' + chalk.bgHex('#1a3a5c').white(' 🧪 SANDBOX MODE ENABLED '));
-            saveConfig({ sandbox: true });
+            const config = await loadConfig();
+
+            const currentStatus = config.sandbox || false;
+            const newStatus = !currentStatus;
+
+            const statusText = newStatus ? 'ENABLED' : 'DISABLED';
+            const bgColor = newStatus ? '#1a3a5c' : '#4a1a1a';
+
+            console.log('\n' + chalk.bgHex(bgColor).white(` 🧪 SANDBOX MODE ${statusText} `));
+
+            await saveConfig({ ...config, sandbox: newStatus });
             continue;
         }
 
