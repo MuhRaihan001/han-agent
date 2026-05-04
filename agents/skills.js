@@ -5,6 +5,7 @@ const path = require('path');
 const { showSelect } = require('../UI/select');
 const { stripAnsi } = require('../UI/utils');
 const { invalidateCache } = require('./utils/load-skills');
+const { loadConfig, saveConfig } = require('./utils/config');
 
 const SKILLS_DIR = path.join(__dirname, '../skills');
 
@@ -37,6 +38,31 @@ function saveSkill(fullPath, content) {
     fs.writeFileSync(fullPath, content, 'utf-8');
 }
 
+// ── Active-skill helpers ──────────────────────────────────────────────────
+function getActiveSkills() {
+    const cfg = loadConfig();
+    return Array.isArray(cfg['active-skills']) ? cfg['active-skills'] : [];
+}
+
+function setActiveSkills(list) {
+    saveConfig({ 'active-skills': list });
+    invalidateCache();
+}
+
+function isActive(name) {
+    return getActiveSkills().includes(name);
+}
+
+function toggleSkill(name) {
+    const active = getActiveSkills();
+    const next = active.includes(name)
+        ? active.filter(n => n !== name)
+        : [...active, name];
+    setActiveSkills(next);
+    return next.includes(name); // returns new state
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────
 const dim = s => chalk.dim(s);
 const W = () => Math.min((process.stdout.columns || 100) - 2, 80);
 
@@ -101,67 +127,46 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
         let modified = false;
 
         function getSize() {
-            return {
-                rows: process.stdout.rows || 24,
-                cols: process.stdout.columns || 80,
-            };
+            return { rows: process.stdout.rows || 24, cols: process.stdout.columns || 80 };
         }
 
-        function gutterWidth() {
-            return String(lines.length).length + 2;
-        }
+        function gutterWidth() { return String(lines.length).length + 2; }
 
         function render() {
             const { rows, cols } = getSize();
             const gutter = gutterWidth();
-            const contentCols = cols - gutter - 1; // -1 for the space after gutter
+            const contentCols = cols - gutter - 1;
             const editorRows = rows - 2;
 
             if (curRow < scrollTop) scrollTop = curRow;
             if (curRow >= scrollTop + editorRows) scrollTop = curRow - editorRows + 1;
 
             hideCursor();
-
-            // Header
             moveTo(1, 1); clearLine();
             const modMark = modified ? chalk.bgYellow.black(' ● ') : chalk.bgGreen.black(' ✔ ');
             const titleText = ` ✎  ${title} `;
-            const modMarkLen = 3;
-            const titlePad = ' '.repeat(Math.max(0, cols - titleText.length - modMarkLen));
+            const titlePad = ' '.repeat(Math.max(0, cols - titleText.length - 3));
             write(chalk.bgHex('#0f4c75').white(titleText + titlePad) + modMark);
 
-            // --- FIX: compute horizontal scroll offset for the cursor's line ---
-            // How many chars are scrolled off the left of the current line
             let hScrollOffset = 0;
-            if (curCol >= contentCols) {
-                hScrollOffset = curCol - contentCols + 1;
-            }
+            if (curCol >= contentCols) hScrollOffset = curCol - contentCols + 1;
 
             for (let i = 0; i < editorRows; i++) {
                 moveTo(i + 2, 1); clearLine();
                 const lineIdx = scrollTop + i;
                 if (lineIdx >= lines.length) continue;
-
                 const num = chalk.dim(String(lineIdx + 1).padStart(gutter - 2) + ' │') + ' ';
                 let text = lines[lineIdx];
-
-                // For the active line, apply horizontal scroll
-                if (curRow === lineIdx) {
-                    text = text.slice(hScrollOffset);
-                }
-
-                // Clip to visible width
+                if (curRow === lineIdx) text = text.slice(hScrollOffset);
                 text = text.slice(0, contentCols);
                 write(num + chalk.white(text));
             }
 
-            // Status bar
             moveTo(rows, 1); clearLine();
             const statusText = ` ^S Save  ^W Save & Exit  ^X Exit   Ln ${curRow + 1}/${lines.length}  Col ${curCol + 1} `;
             const statusPad = ' '.repeat(Math.max(0, cols - statusText.length));
             write(chalk.bgHex('#1e2a3a').cyan(statusText + statusPad));
 
-            // --- FIX: cursor column = gutter + (curCol - hScrollOffset) ---
             const displayCol = gutter + 1 + (curCol - hScrollOffset);
             const displayRow = curRow - scrollTop + 2;
             moveTo(displayRow, displayCol);
@@ -182,105 +187,49 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
         process.stdin.setRawMode(true);
         process.stdin.resume();
         process.stdin.setEncoding('utf8');
-
         clearScreen();
         render();
 
         process.stdin.on('data', key => {
             if (key === '\x03') { cleanup(null); return; }
-
-            if (key === '\x13') {
-                modified = false;
-                render();
-                return;
-            }
-
+            if (key === '\x13') { modified = false; render(); return; }
             if (key === '\x17') { cleanup(lines.join('\n')); return; }
             if (key === '\x18') { cleanup(null); return; }
-
-            if (key === `${ESC}[A`) {
-                if (curRow > 0) { curRow--; curCol = Math.min(curCol, lines[curRow].length); }
-                render(); return;
-            }
-            if (key === `${ESC}[B`) {
-                if (curRow < lines.length - 1) { curRow++; curCol = Math.min(curCol, lines[curRow].length); }
-                render(); return;
-            }
-            if (key === `${ESC}[C`) {
-                if (curCol < lines[curRow].length) { curCol++; }
-                else if (curRow < lines.length - 1) { curRow++; curCol = 0; }
-                render(); return;
-            }
-            if (key === `${ESC}[D`) {
-                if (curCol > 0) { curCol--; }
-                else if (curRow > 0) { curRow--; curCol = lines[curRow].length; }
-                render(); return;
-            }
-
+            if (key === `${ESC}[A`) { if (curRow > 0) { curRow--; curCol = Math.min(curCol, lines[curRow].length); } render(); return; }
+            if (key === `${ESC}[B`) { if (curRow < lines.length - 1) { curRow++; curCol = Math.min(curCol, lines[curRow].length); } render(); return; }
+            if (key === `${ESC}[C`) { if (curCol < lines[curRow].length) curCol++; else if (curRow < lines.length - 1) { curRow++; curCol = 0; } render(); return; }
+            if (key === `${ESC}[D`) { if (curCol > 0) curCol--; else if (curRow > 0) { curRow--; curCol = lines[curRow].length; } render(); return; }
             if (key === `${ESC}[H` || key === '\x01') { curCol = 0; render(); return; }
             if (key === `${ESC}[F` || key === '\x05') { curCol = lines[curRow].length; render(); return; }
-
-            if (key === `${ESC}[5~`) {
-                const ph = (process.stdout.rows || 24) - 2;
-                curRow = Math.max(0, curRow - ph);
-                curCol = Math.min(curCol, lines[curRow].length);
-                render(); return;
-            }
-            if (key === `${ESC}[6~`) {
-                const ph = (process.stdout.rows || 24) - 2;
-                curRow = Math.min(lines.length - 1, curRow + ph);
-                curCol = Math.min(curCol, lines[curRow].length);
-                render(); return;
-            }
-
             if (key === '\r' || key === '\n') {
                 const before = lines[curRow].slice(0, curCol);
                 const after = lines[curRow].slice(curCol);
                 lines[curRow] = before;
                 lines.splice(curRow + 1, 0, after);
-                curRow++; curCol = 0;
-                modified = true;
-                render(); return;
+                curRow++; curCol = 0; modified = true; render(); return;
             }
-
             if (key === '\x7f' || key === '\b') {
-                if (curCol > 0) {
-                    lines[curRow] = lines[curRow].slice(0, curCol - 1) + lines[curRow].slice(curCol);
-                    curCol--;
-                } else if (curRow > 0) {
-                    const prevLen = lines[curRow - 1].length;
-                    lines[curRow - 1] += lines[curRow];
-                    lines.splice(curRow, 1);
-                    curRow--; curCol = prevLen;
-                }
-                modified = true;
-                render(); return;
+                if (curCol > 0) { lines[curRow] = lines[curRow].slice(0, curCol - 1) + lines[curRow].slice(curCol); curCol--; }
+                else if (curRow > 0) { const prevLen = lines[curRow - 1].length; lines[curRow - 1] += lines[curRow]; lines.splice(curRow, 1); curRow--; curCol = prevLen; }
+                modified = true; render(); return;
             }
-
             if (key === `${ESC}[3~`) {
-                if (curCol < lines[curRow].length) {
-                    lines[curRow] = lines[curRow].slice(0, curCol) + lines[curRow].slice(curCol + 1);
-                } else if (curRow < lines.length - 1) {
-                    lines[curRow] += lines[curRow + 1];
-                    lines.splice(curRow + 1, 1);
-                }
-                modified = true;
-                render(); return;
+                if (curCol < lines[curRow].length) lines[curRow] = lines[curRow].slice(0, curCol) + lines[curRow].slice(curCol + 1);
+                else if (curRow < lines.length - 1) { lines[curRow] += lines[curRow + 1]; lines.splice(curRow + 1, 1); }
+                modified = true; render(); return;
             }
-
             if (key.startsWith(ESC)) return;
-
             if (key >= ' ' || key === '\t') {
                 lines[curRow] = lines[curRow].slice(0, curCol) + key + lines[curRow].slice(curCol);
-                curCol += key.length;
-                modified = true;
-                render();
+                curCol += key.length; modified = true; render();
             }
         });
 
         process.stdout.on('resize', render);
     });
 }
+
+// ── Actions ───────────────────────────────────────────────────────────────
 
 async function actionAdd(rl) {
     printBox(
@@ -295,7 +244,6 @@ async function actionAdd(rl) {
     if (fs.existsSync(fp)) { printError(`Skill "${name}" already exists.`); return; }
 
     const template = `# ${name}\n\n## Instructions\n\n`;
-
     rl.pause();
     const content = await multilineEditor({ title: name, initial: template, rl });
 
@@ -394,6 +342,10 @@ async function actionDelete(rl, skills) {
 
     if (!confirm || confirm.index !== 0) { printInfo('Delete cancelled.'); return; }
 
+    // Also remove from active-skills if present
+    const active = getActiveSkills().filter(n => n !== skill.name);
+    setActiveSkills(active);
+
     fs.unlinkSync(skill.fullPath);
     invalidateCache();
     printSuccess(`Skill "${skill.name}" deleted.`);
@@ -405,15 +357,59 @@ function actionList(skills) {
         return;
     }
 
+    const active = getActiveSkills();
     const rows = skills.map((s, i) => {
         const content = readSkill(s.fullPath);
         const lines = content.split('\n').length;
         const size = content.length;
-        return `  ${chalk.dim(`${String(i + 1).padStart(2)}.`)} ${chalk.bold.white(s.name)}${dim(` — ${lines} lines, ${size} chars`)}`;
+        const badge = active.includes(s.name)
+            ? chalk.green('✔ on ')
+            : chalk.dim('○ off');
+        return `  ${chalk.dim(`${String(i + 1).padStart(2)}.`)} [${badge}${chalk.dim(']')} ${chalk.bold.white(s.name)}${dim(` — ${lines} lines, ${size} chars`)}`;
     });
 
     printBox(rows, { title: `Skills (${skills.length})` });
 }
+
+/**
+ * Toggle page — lets the user flip individual skills on/off in a loop.
+ * Loop exits when the user picks "← Done".
+ */
+async function actionToggle(rl, skills) {
+    if (skills.length === 0) { printInfo('No skills found.'); return; }
+
+    while (true) {
+        const active = getActiveSkills();
+
+        const choices = [
+            ...skills.map(s => {
+                const on = active.includes(s.name);
+                const badge = on ? chalk.green('✔ enabled ') : chalk.dim('○ disabled');
+                return `[${badge}${chalk.dim(']')}  ${chalk.white(s.name)}`;
+            }),
+            '← Done',
+        ];
+
+        const choice = await showSelect({
+            title: '🔧  Enable / Disable Skills',
+            message: 'Pick a skill to toggle, then press Enter. Select "← Done" when finished.',
+            choices,
+            rl,
+            helpers: { dim },
+        });
+
+        if (!choice || choice.value === '← Done') break;
+
+        const skill = skills[choice.index];
+        const nowActive = toggleSkill(skill.name);
+
+        printSuccess(
+            `"${skill.name}" is now ${nowActive ? chalk.green('enabled') : chalk.red('disabled')}.`
+        );
+    }
+}
+
+// ── Main skill manager loop ───────────────────────────────────────────────
 
 async function skillManager() {
     const rl = makeRL();
@@ -431,11 +427,14 @@ async function skillManager() {
 
     while (true) {
         const skills = listSkills();
+        const active = getActiveSkills();
+        const activeCount = skills.filter(s => active.includes(s.name)).length;
 
         const choice = await showSelect({
             title: 'Skill Manager',
             message: 'What do you want to do?',
             choices: [
+                `🔧  Enable / Disable skills${chalk.dim(` (${activeCount}/${skills.length} active)`)}`,
                 'Add skill',
                 `Edit skill${skills.length > 0 ? chalk.dim(` (${skills.length} available)`) : ''}`,
                 'View skill',
@@ -447,17 +446,18 @@ async function skillManager() {
             helpers: { dim },
         });
 
-        if (!choice || choice.index === 5) {
+        if (!choice || choice.index === 6) {
             delete require.cache[require.resolve('../index')]; require('../index');
             rl.close(); return;
         }
 
         switch (choice.index) {
-            case 0: await actionAdd(rl); break;
-            case 1: await actionEdit(rl, skills); break;
-            case 2: await actionView(rl, skills); break;
-            case 3: actionList(skills); break;
-            case 4: await actionDelete(rl, skills); break;
+            case 0: await actionToggle(rl, skills); break;
+            case 1: await actionAdd(rl); break;
+            case 2: await actionEdit(rl, skills); break;
+            case 3: await actionView(rl, skills); break;
+            case 4: actionList(skills); break;
+            case 5: await actionDelete(rl, skills); break;
         }
     }
 

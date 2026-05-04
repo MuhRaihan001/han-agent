@@ -88,6 +88,7 @@ async function main() {
         require('./UI/main');
     } else if (choice.startsWith('⚔')) {
         rl.close();
+        delete require.cache[require.resolve('./agents/skills')];
         require('./agents/skills');
     } 
     else if (choice.startsWith('⚙')) {

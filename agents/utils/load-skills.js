@@ -24,10 +24,19 @@ async function loadSkillsRecursive(dir) {
 
 async function getSkillsContext() {
     if (!cachedSkills) {
+        const { loadConfig } = require('../utils/config');
+        const cfg = loadConfig();
+        const activeSkills = Array.isArray(cfg['active-skills']) ? cfg['active-skills'] : [];
+
         const skills = await loadSkillsRecursive(skillsFolder);
-        cachedSkills = skills
+
+        const filtered = activeSkills.length > 0
+            ? skills.filter(s => activeSkills.includes(s.name))
+            : [];
+
+        cachedSkills = filtered
             .map(s => `# ${s.name}\n${s.content}`)
-            .join("\n\n");
+            .join('\n\n');
     }
     return cachedSkills;
 }

@@ -68,7 +68,7 @@ Responses appear in real-time with a typewriter effect, markdown rendering, and 
 <td width="50%">
 
 ### 🧩 Skill System
-Drop a `.md` file into `skills/` and HAN immediately gains new capabilities — no restarts, no code changes. Manage skills interactively from the main menu.
+Drop a `.md` file into `skills/` and manage which ones are active from the Skill Manager. Only enabled skills are injected into the prompt — no restarts needed.
 
 </td>
 <td width="50%">
@@ -80,27 +80,31 @@ Rolling context window with automatic summarization keeps conversations coherent
 </tr>
 </table>
 
-⚡ Quick Start
+## ⚡ Quick Start
+
+```bash
 # 1. Clone the repo
-git clone https://github.com/MuhRaihan001/han-agent.git
+git clone https://github.com/TsumuX/han.git
 cd han
 
-# 2. Run HAN (dependencies will be installed automatically on first run)
+# 2. Install dependencies
+npm install
+
+# 3. Run first-time setup
+#    This creates agents/config.json, .env, and skills/
+npm run setup
+
+# 4. Launch HAN
 npm start
+```
 
-On first run, HAN will:
-
-Automatically install required dependencies
-Create agents/config.json, .env, and skills/ folder
-Guide you to configure your API key and model
-
-On first launch, go to **🛠   Run setup (create config and skills folder)** to run the first setup
-Then, go to **⚙ Configure agent** to set your API key, provider, and model before starting a conversation.
+On first launch, go to **⚙ Configure agent** to set your API key, provider, and model before starting a conversation.
 
 > **Global install** — use HAN from anywhere:
 > ```bash
 > npm install -g .
 > start-han   # launch
+> setup-han   # re-run first-time setup
 > ```
 
 ## ⚙️ Configuration
@@ -173,7 +177,8 @@ If you prefer editing directly, `agents/config.json` is created by `npm run setu
     "gemini-api-key":   "",
     "openai-api-key":   "",
     "stream-response":  true,
-    "sandbox":          false
+    "sandbox":          false,
+    "active-skills":    ["nlp"]
 }
 ```
 
@@ -204,11 +209,36 @@ DATABASE_NAME=yourdb
 
 Skills are plain `.md` files that get injected into every system prompt, teaching HAN how to behave for specific tasks. HAN includes a full **interactive Skill Manager** accessible from the main menu under **⚔ Manage skills**.
 
-Skill files live in the **`skills/`** folder at the project root (not `agents/skills/`). They are loaded **recursively**, so subdirectories are supported.
+### Active vs inactive skills
+
+Skills are **opt-in** — a skill file being present in `skills/` does not mean it is active. Only skills you explicitly enable are injected into the AI prompt. This keeps the context lean and lets you swap skill sets without deleting files.
+
+The `active-skills` array in `agents/config.json` holds the list of currently enabled skill names (filename without `.md`):
+
+```json
+"active-skills": ["nlp", "my-custom-skill"]
+```
+
+An empty array means no skills are active. HAN still works normally — it just won't have any extra skill context.
 
 ### What you can do
 
-From the Skill Manager menu you can add a new skill, edit an existing skill, view a skill's content with syntax highlighting, list all skills with line and character counts, and delete a skill with confirmation.
+From the Skill Manager menu you can enable or disable individual skills, add a new skill, edit an existing skill, view a skill's content with syntax highlighting, list all skills with their active status and line/character counts, and delete a skill with confirmation.
+
+### Enabling and disabling skills
+
+Select **🔧 Enable / Disable skills** from the Skill Manager menu. Each skill in the list shows its current state:
+
+```
+  [ ✔ enabled ]  nlp
+  [ ○ disabled]  my-draft-skill
+  [ ○ disabled]  experimental
+  ← Done
+```
+
+Pick any skill to toggle it on or off instantly. The change takes effect on the next conversation turn — no restart needed. Select **← Done** when finished.
+
+The **List skills** view also shows the active status badge next to each entry so you always have a quick overview.
 
 ### Adding a skill
 
@@ -225,6 +255,8 @@ Select **Add skill**, enter a name, and a full-screen **inline editor** opens di
 
 The editor shows line numbers, a modified indicator (● yellow when unsaved, ✔ green when clean), and the current line and column in the status bar. It handles horizontal scrolling automatically when a line exceeds the terminal width.
 
+New skills are saved as **disabled** by default. Go to **🔧 Enable / Disable skills** to activate them.
+
 ### Editing a skill
 
 Select **Edit skill**, choose from the list, and the same full-screen editor opens pre-loaded with the existing content. A `.bak` backup of the original file is written before saving.
@@ -233,11 +265,11 @@ Select **Edit skill**, choose from the list, and the same full-screen editor ope
 
 ```
 skills/
-  ├── nlp.md          ← built-in: NLP-to-SQL
-  └── your-skill.md   ← drop any .md here, subfolders supported
+  ├── nlp.md              ← built-in: NLP-to-SQL
+  └── your-skill.md       ← drop any .md here, subfolders supported
 ```
 
-Skills are loaded recursively — subfolders work fine. The skill cache is invalidated automatically after any add, edit, or delete operation so the next conversation picks up the changes immediately without restarting HAN.
+Skills are loaded recursively — subfolders work fine. The skill cache is invalidated automatically after any add, edit, delete, or toggle operation so the next conversation picks up the changes immediately without restarting HAN.
 
 ### Writing a good skill
 
@@ -353,7 +385,6 @@ Every command requires explicit user approval before it runs. The prompt changes
 **Standard mode** — three options:
 ```
   ✔  Yes, run it
-  ✎  Edit before running
   ✖  Skip this command
   ⛔  Abort all remaining
 ```
@@ -467,6 +498,8 @@ When paired with a MySQL database, HAN can interpret natural language and conver
 
 Queries with **low confidence** or **ambiguous matches** are flagged before execution. Nothing runs without your go-ahead.
 
+> The NLP → SQL feature requires the `nlp` skill to be **enabled** in the Skill Manager.
+
 ### JOIN support
 
 The NLP engine supports LEFT, RIGHT, INNER, and FULL JOIN operations on SELECT queries. When a join is needed, columns and WHERE clauses are automatically prefixed with the table name (e.g. `work.id`, `proyek.name`). JOIN is not permitted on INSERT, UPDATE, or DELETE operations.
@@ -516,8 +549,8 @@ han/
 │   ├── utils/
 │   │   ├── config.js          ← read/write agents/config.json
 │   │   ├── history.js         ← conversation memory & summarization
-│   │   ├── insturctor.js      ← NLP-to-SQL engine (Instructor class)
-│   │   ├── load-skills.js     ← recursive skill loader with cache invalidation
+│   │   ├── insturctor.js      ← NLP-to-SQL engine
+│   │   ├── load-skills.js     ← skill loader (respects active-skills list)
 │   │   └── shell-command.js   ← PC execution engine ⚡
 │   ├── configure.js           ← interactive config CLI
 │   ├── response.js            ← main AI pipeline
@@ -525,20 +558,18 @@ han/
 ├── core/
 │   └── utils/
 │       ├── deploySQL.js       ← MySQL connection pool
-│       └── files.js           ← filesystem helpers (getFiles, readFile, etc.)
+│       └── files.js           ← filesystem helpers
+├── skills/                    ← drop .md skill files here
+│   └── nlp.md                 ← built-in: NLP-to-SQL (disabled by default)
 ├── UI/
 │   ├── headers.js             ← terminal header & label renderers
-│   ├── main.js                ← conversation loop & input handler
-│   ├── renderer.js            ← markdown stream printer (StreamPrinter)
+│   ├── renderer.js            ← markdown stream printer
 │   ├── select.js              ← interactive select menu
 │   └── utils.js               ← shared terminal utilities
-├── skills/                    ← drop .md skill files here (root-level)
-│   └── nlp.md                 ← built-in NLP-to-SQL skill
 ├── .shell-audit.log           ← auto-generated command audit trail
-├── cli.js                     ← entry point with auto npm install
-├── index.js                   ← main menu
-├── setup.js                   ← first-time setup script
-└── package.json
+├── index.js                   ← conversation entry point
+├── cli.js                     ← main menu / launcher
+└── setup.js                   ← first-time setup script
 ```
 
 ## 📋 Config Reference
@@ -554,6 +585,7 @@ han/
 | `openai-api-key` | `string` | OpenAI API key |
 | `stream-response` | `boolean` | Typewriter streaming output (`true` / `false`) |
 | `sandbox` | `boolean` | Sandbox mode — preview command effects before execution |
+| `active-skills` | `string[]` | List of skill names (without `.md`) that are injected into the prompt. Empty array = no skills active. |
 
 ### `.env`
 
@@ -567,12 +599,6 @@ han/
 ## 🔄 Reset Configuration
 
 If you need to wipe all settings and start over, go to **⚙ Configure agent → ↩ Reset all settings**, or delete `agents/config.json` and re-run:
-
-```bash
-npm run setup
-```
-
-You can also re-run setup at any time from the main menu by selecting **🛠 Run setup** — this safely creates any missing files and folders without overwriting existing ones.
 
 <div align="center">
 

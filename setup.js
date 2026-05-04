@@ -16,7 +16,8 @@ const DEFAULT_CONFIG = {
     'claude-api-key': '',
     'openai-api-key': '',
     'stream-response': true,
-    'sandbox': false
+    'sandbox': false,
+    'active-skills': []
 };
 
 const DEFAULT_ENV = `
