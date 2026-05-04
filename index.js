@@ -11,19 +11,22 @@ const termWidth = () => process.stdout.columns || 100;
 const line = () => '─'.repeat(termWidth() - 2);
 
 function printBanner() {
-
     const cfg = loadConfig();
     const provider = cfg['current-provider'] || 'unknown';
     const model = cfg['current-models'] || 'unknown';
     const pColor = getProviderColor(provider);
 
     const w = Math.min(termWidth() - 4, 80);
-    const colLeft = Math.floor((w - 3) / 2);
-    const colRight = w - colLeft - 3;
+    const colLeft = 10;
+    const colRight = w - colLeft - 4;
+
+    function stripAnsi(str) {
+        return str.replace(/\x1B\[[0-9;]*m/g, '');
+    }
 
     function padR(str, width) {
-        const v = str.replace(/\x1B\[[0-9;]*m/g, '').length;
-        return str + ' '.repeat(Math.max(0, width - v));
+        const visible = stripAnsi(str).length;
+        return str + ' '.repeat(Math.max(0, width - visible));
     }
 
     function infoRow(label, value) {
@@ -37,10 +40,12 @@ function printBanner() {
     const botSep = chalk.cyan('╰' + '─'.repeat(w) + '╯');
 
     const hdrText = ' ⚙  Active configuration';
-    const hdrPad = ' '.repeat(Math.max(0, w - hdrText.length));
+    const hdrPad = ' '.repeat(Math.max(0, w - stripAnsi(hdrText).length));
     const hdrLine = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
 
-    const statusText = model === 'unknown' || provider === 'unknown' ? chalk.red('● not configured') : chalk.green('● ready');
+    const statusText = model === 'unknown' || provider === 'unknown'
+        ? chalk.red('● not configured')
+        : chalk.green('● ready');
 
     console.log(topSep);
     console.log(hdrLine);
@@ -51,7 +56,6 @@ function printBanner() {
     console.log(botSep);
     console.log();
 }
-
 async function main() {
     printBanner();
 
@@ -69,6 +73,7 @@ async function main() {
             '✖   Exit',
         ],
         helpers: { dim, bold },
+        width: Math.min(termWidth() - 4, 80)
     });
 
     if (!result) {
