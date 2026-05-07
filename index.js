@@ -1,23 +1,23 @@
+// index.js  (patched — adds 💬 Conversation History entry)
 const readline = require('readline');
-const chalk = require('chalk');
-const { printHeader } = require('./UI/headers');
-const { showSelect } = require('./UI/select');
+const chalk    = require('chalk');
+const { printHeader }      = require('./UI/headers');
+const { showSelect }       = require('./UI/select');
 const { loadConfig, getProviderColor } = require('./UI/utils');
 
-const dim = s => chalk.dim(s);
+const dim  = s => chalk.dim(s);
 const bold = s => chalk.bold(s);
 
 const termWidth = () => process.stdout.columns || 100;
-const line = () => '─'.repeat(termWidth() - 2);
 
 function printBanner() {
-    const cfg = loadConfig();
+    const cfg      = loadConfig();
     const provider = cfg['current-provider'] || 'unknown';
-    const model = cfg['current-models'] || 'unknown';
-    const pColor = getProviderColor(provider);
+    const model    = cfg['current-models']   || 'unknown';
+    const pColor   = getProviderColor(provider);
 
-    const w = Math.min(termWidth() - 4, 80);
-    const colLeft = 10;
+    const w        = Math.min(termWidth() - 4, 80);
+    const colLeft  = 10;
     const colRight = w - colLeft - 4;
 
     function stripAnsi(str) {
@@ -40,22 +40,33 @@ function printBanner() {
     const botSep = chalk.cyan('╰' + '─'.repeat(w) + '╯');
 
     const hdrText = ' ⚙  Active configuration';
-    const hdrPad = ' '.repeat(Math.max(0, w - stripAnsi(hdrText).length));
+    const hdrPad  = ' '.repeat(Math.max(0, w - stripAnsi(hdrText).length));
     const hdrLine = chalk.cyan('│') + chalk.bold.white(hdrText) + hdrPad + chalk.cyan('│');
 
     const statusText = model === 'unknown' || provider === 'unknown'
         ? chalk.red('● not configured')
         : chalk.green('● ready');
 
+    // Show how many conversations are saved
+    let convCount = '';
+    try {
+        const Conversations = require('./agents/utils/Conversations');
+        const cm = new Conversations();
+        const n  = cm.listConversations().length;
+        if (n > 0) convCount = dim(`  (${n} conversation${n === 1 ? '' : 's'} saved)`);
+    } catch { /* non-fatal */ }
+
     console.log(topSep);
     console.log(hdrLine);
     console.log(midSep);
     console.log(infoRow('Provider', pColor(`[${provider}]`)));
-    console.log(infoRow('Model', chalk.yellow(model)));
-    console.log(infoRow('Status', statusText));
+    console.log(infoRow('Model',    chalk.yellow(model)));
+    console.log(infoRow('Status',   statusText));
     console.log(botSep);
+    if (convCount) console.log(chalk.dim('  ' + convCount));
     console.log();
 }
+
 async function main() {
     printBanner();
 
@@ -63,17 +74,18 @@ async function main() {
 
     const result = await showSelect({
         rl,
-        title: '✦  Main Menu',
+        title:   '✦  Main Menu',
         message: 'What would you like to do?',
         choices: [
             '⚡  Start conversation',
+            '💬  Conversation history',
             '⚙   Configure agent',
             '⚔   Manage skills',
             '🛠   Run setup (create config and skills folder)',
             '✖   Exit',
         ],
         helpers: { dim, bold },
-        width: Math.min(termWidth() - 4, 80)
+        width: Math.min(termWidth() - 4, 80),
     });
 
     if (!result) {
@@ -91,12 +103,15 @@ async function main() {
     } else if (choice.startsWith('⚡')) {
         rl.close();
         require('./UI/main');
+    } else if (choice.startsWith('💬')) {
+        rl.close();
+        delete require.cache[require.resolve('./agents/conversation-ui')];
+        require('./agents/conversation-ui').conversationBrowser();
     } else if (choice.startsWith('⚔')) {
         rl.close();
         delete require.cache[require.resolve('./agents/skills')];
         require('./agents/skills');
-    } 
-    else if (choice.startsWith('⚙')) {
+    } else if (choice.startsWith('⚙')) {
         rl.close();
         require('./agents/configure');
     }

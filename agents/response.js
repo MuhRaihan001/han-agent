@@ -1,9 +1,14 @@
-const HistoryManager = require("./utils/history");
+// agents/response.js  (patched — adds conversation save/load)
+const HistoryManager  = require("./utils/history");
 const { getSkillsContext } = require("./utils/load-skills");
-const { loadConfig } = require("./utils/config");
+const { loadConfig }       = require("./utils/config");
 const { executeWithContext } = require("./utils/shell-command");
+const Conversations   = require("./utils/conversation");
 
-const historyManager = new HistoryManager({ recentWindow: 20 });
+const historyManager      = new HistoryManager({ recentWindow: 20 });
+const conversationManager = new Conversations();
+
+const _activeConvId = {};
 
 const MODEL_PATHS = {
     gemini: "./models/Google",
@@ -14,14 +19,16 @@ const MODEL_PATHS = {
 const config = loadConfig();
 
 async function _buildModel(config) {
-    const modelname = config["current-models"]?.toLowerCase();
+    const modelname       = config["current-models"]?.toLowerCase();
     const currentProvider = config["current-provider"]?.toLowerCase();
 
     if (!modelname) throw new Error("No model selected.");
-    if (!MODEL_PATHS[currentProvider]) throw new Error(`Provider "${currentProvider}" not registered.`);
+    if (!MODEL_PATHS[currentProvider])
+        throw new Error(`Provider "${currentProvider}" not registered.`);
 
     const apiKey = config[`${currentProvider}-api-key`];
-    if (!apiKey) throw new Error(`API key for "${currentProvider}" is not set.`);
+    if (!apiKey)
+        throw new Error(`API key for "${currentProvider}" is not set.`);
 
     const Model = require(MODEL_PATHS[currentProvider]);
     return { model: new Model(apiKey), modelname };
@@ -49,28 +56,21 @@ async function validatePrompt(prompt, config) {
     User input: "${prompt}"`;
 
     const { model, modelname } = await _buildModel(config);
-    const response = await model.generateResponse([{ role: "user", content: instruction }], modelname);
+    const response = await model.generateResponse(
+        [{ role: "user", content: instruction }],
+        modelname
+    );
     return response.trim().toUpperCase().startsWith("VALID");
 }
+
 async function _buildMessages(userId, prompt) {
     const skillsContext = await getSkillsContext();
-    const history = historyManager.getForPrompt(userId);
-    const result = [
-        {
-            role: "dev",
-            content: `You have the following skills:\n\n${skillsContext}`,
-        },
+    const history       = historyManager.getForPrompt(userId);
+    return [
+        { role: "dev", content: `You have the following skills:\n\n${skillsContext}` },
         ...history,
         { role: "user", content: prompt },
     ];
-    return result;
-}
-
-async function getResponse(userId, prompt) {
-    if (config["stream-response"]) {
-        return { stream: true, generator: streamModelResponse(userId, prompt) };
-    }
-    return { stream: false, text: await generateModelResponse(userId, prompt) };
 }
 
 function formatRoundsOutput(rounds) {
@@ -82,10 +82,54 @@ function formatRoundsOutput(rounds) {
     ).join('\n\n');
 }
 
+function _autoSave(userId) {
+    const history = historyManager.get(userId);
+    const summary = historyManager.summaries[userId] || '';
+
+    // Create a new file if this user doesn't have an active conversation yet
+    if (!_activeConvId[userId]) {
+        _activeConvId[userId] = conversationManager.createConversation();
+    }
+
+    conversationManager.saveConversation(
+        _activeConvId[userId],
+        history,
+        summary
+    );
+}
+
+function loadConversation(userId, conversationId) {
+    const data = conversationManager.restoreToHistory(
+        conversationId,
+        historyManager,
+        userId
+    );
+    if (!data) return null;
+
+    _activeConvId[userId] = conversationId;
+    return {
+        id:           data.id,
+        title:        data.title,
+        messageCount: (data.messages || []).length,
+    };
+}
+
+function newConversation(userId) {
+    historyManager.clear(userId);
+    _activeConvId[userId] = null;
+}
+
+async function getResponse(userId, prompt) {
+    if (config["stream-response"]) {
+        return { stream: true, generator: streamModelResponse(userId, prompt) };
+    }
+    return { stream: false, text: await generateModelResponse(userId, prompt) };
+}
+
 async function generateModelResponse(userId, prompt) {
     const { model, modelname } = await _buildModel(config);
-    const messages = await _buildMessages(userId, prompt);
-    const isShell = await validatePrompt(prompt, config);
+    const messages             = await _buildMessages(userId, prompt);
+    const isShell              = await validatePrompt(prompt, config);
 
     let response;
     if (isShell) {
@@ -95,15 +139,16 @@ async function generateModelResponse(userId, prompt) {
         response = await model.generateResponse(messages, modelname);
     }
 
-    historyManager.add(userId, "user", prompt);
+    historyManager.add(userId, "user",      prompt);
     historyManager.add(userId, "assistant", response);
+    _autoSave(userId);
     return response;
 }
 
 async function* streamModelResponse(userId, prompt) {
     const { model, modelname } = await _buildModel(config);
-    const messages = await _buildMessages(userId, prompt);
-    const isShell = await validatePrompt(prompt, config);
+    const messages             = await _buildMessages(userId, prompt);
+    const isShell              = await validatePrompt(prompt, config);
 
     let fullResponse = "";
 
@@ -120,10 +165,23 @@ async function* streamModelResponse(userId, prompt) {
         }
     }
 
-    historyManager.add(userId, "user", prompt);
+    historyManager.add(userId, "user",      prompt);
     historyManager.add(userId, "assistant", fullResponse);
+    _autoSave(userId);
 }
 
-const clearHistory = (userId) => historyManager.clear(userId);
+const clearHistory = (userId) => {
+    historyManager.clear(userId);
+    _activeConvId[userId] = null;
+};
 
-module.exports = { generateModelResponse, streamModelResponse, clearHistory, getResponse, historyManager };
+module.exports = {
+    generateModelResponse,
+    streamModelResponse,
+    clearHistory,
+    getResponse,
+    historyManager,
+    conversationManager,    // ← export so UI can use it
+    loadConversation,       // ← new
+    newConversation,        // ← new
+};

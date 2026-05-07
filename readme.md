@@ -73,8 +73,22 @@ Drop a `.md` file into `skills/` and manage which ones are active from the Skill
 </td>
 <td width="50%">
 
+### 💬 Conversation History
+Every conversation is **auto-saved** to disk. Resume any past session from the main menu — the full chat history is replayed in the terminal exactly as it looked live.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
 ### 🧵 Smart History
 Rolling context window with automatic summarization keeps conversations coherent without burning tokens.
+
+</td>
+<td width="50%">
+
+### 🧪 Sandbox Mode
+Preview the predicted side effects of every shell command before it touches your machine.
 
 </td>
 </tr>
@@ -204,6 +218,107 @@ DATABASE_USER=root
 DATABASE_PASSWORD=yourpassword
 DATABASE_NAME=yourdb
 ```
+
+## 💬 Conversation History
+
+HAN automatically saves every conversation to disk as a JSON file inside the `conversations/` folder. You never need to manually save — it happens silently after every AI response.
+
+### Auto-save behaviour
+
+After each completed turn (user message + AI reply), HAN writes the full message history and rolling summary to `conversations/<id>.json`. The title is derived automatically from the first message you sent. If a conversation already has a file, it is overwritten with the latest state.
+
+```
+conversations/
+  1714900000000-a3f2.json   ← auto-named by timestamp + random suffix
+  1714901234567-b7c1.json
+  ...
+```
+
+Each file contains the conversation id, title, creation time, last-updated time, the full message array, and the compressed summary:
+
+```json
+{
+    "id": "1714900000000-a3f2",
+    "title": "How do I list running processes?",
+    "createdAt": "2026-05-01T10:00:00.000Z",
+    "updatedAt": "2026-05-01T10:04:22.000Z",
+    "messages": [
+        { "role": "user",      "content": "How do I list running processes?", "ts": "..." },
+        { "role": "assistant", "content": "You can use `tasklist` on Windows…", "ts": "..." }
+    ],
+    "summary": "U:list running processes | A:use tasklist command"
+}
+```
+
+### Accessing the Conversation History browser
+
+From the main menu, select **💬 Conversation history**. The banner also shows how many conversations are currently saved.
+
+```
+  ╭────────────────────────────────────────╮
+  │ ⚙  Active configuration               │
+  ├────────────────────────────────────────┤
+  │ Provider  │ [claude]                   │
+  │ Model     │ claude-sonnet-4-5          │
+  │ Status    │ ● ready                    │
+  ╰────────────────────────────────────────╯
+    (12 conversations saved)
+```
+
+### What you can do
+
+From the Conversation History menu you can load a past conversation to resume it, start a fresh conversation (clearing the current in-memory session), list all saved conversations with message counts and timestamps, rename a conversation to something memorable, and delete a conversation with confirmation.
+
+### Loading a conversation
+
+Select **📂 Load conversation**, pick one from the list, and HAN will restore the full message history into the active session and drop you straight into the chat screen. All previous messages are **replayed to the terminal** — user bubbles and assistant responses with full markdown rendering — so you can see the entire context before continuing.
+
+```
+  📂  Loaded conversation — showing history   14 messages
+
+  ─────────────────────────────────────────────────────────
+
+  You    10:00:12
+  │
+  │  How do I list running processes?
+  │
+
+  Assistant  10:00:15
+  │
+  │  You can use `tasklist` on Windows to see all running
+  │  processes. For more detail, try `tasklist /v`.
+  │
+
+  ─────────────────────────────────────────────────────────
+    ↑ End of history — continue below
+
+❯ _
+```
+
+After the history replay, the prompt appears and you can continue the conversation exactly where it left off. The AI retains full context of everything said previously.
+
+### Starting a new conversation
+
+Select **✦ Start new conversation** from the Conversation History menu, or simply select **⚡ Start conversation** from the main menu. Either way, the previous in-memory session is cleared and a new save file will be created on your first response.
+
+> Your last session is always already saved — starting a new conversation does not lose any data.
+
+### Renaming a conversation
+
+Titles are auto-generated from your first message. If you want something more descriptive, select **✏ Rename conversation**, pick the entry, and type a new title. The change is saved immediately.
+
+### Deleting a conversation
+
+Select **🗑 Delete conversation**, choose the entry, and confirm. Deletion is permanent — there is no recycle bin.
+
+### Conversation file location
+
+```
+conversations/           ← auto-created at project root on first save
+  *.json
+```
+
+The folder is not git-ignored by default. If you do not want to commit your conversations, add `conversations/` to your `.gitignore`.
 
 ## 🧩 Skill Manager
 
@@ -364,7 +479,7 @@ Sandbox mode adds a **preview step** before every command runs, showing you the 
 🧪 SANDBOX MODE ENABLED
 ```
 
-This sets `"sandbox": true` in `agents/config.json` and persists across restarts. To disable it, set `"sandbox": false` manually in the config file.
+This sets `"sandbox": true` in `agents/config.json` and persists across restarts. To disable it, type `sandbox` again at the prompt to toggle it off.
 
 ### Effect Prediction
 
@@ -542,34 +657,38 @@ Summaries use compressed notation (`U:` for user, `A:` for assistant) to maximiz
 han/
 ├── agents/
 │   ├── models/
-│   │   ├── base-model.js      ← abstract base for all providers
-│   │   ├── Anthropic.js       ← Claude
-│   │   ├── Google.js          ← Gemini
-│   │   └── OpenAi.js          ← GPT
+│   │   ├── base-model.js          ← abstract base for all providers
+│   │   ├── Anthropic.js           ← Claude
+│   │   ├── Google.js              ← Gemini
+│   │   └── OpenAi.js              ← GPT
 │   ├── utils/
-│   │   ├── config.js          ← read/write agents/config.json
-│   │   ├── history.js         ← conversation memory & summarization
-│   │   ├── insturctor.js      ← NLP-to-SQL engine
-│   │   ├── load-skills.js     ← skill loader (respects active-skills list)
-│   │   └── shell-command.js   ← PC execution engine ⚡
-│   ├── configure.js           ← interactive config CLI
-│   ├── response.js            ← main AI pipeline
-│   └── skills.js              ← interactive Skill Manager CLI
+│   │   ├── config.js              ← read/write agents/config.json
+│   │   ├── Conversations.js       ← conversation save/load engine 💬
+│   │   ├── history.js             ← conversation memory & summarization
+│   │   ├── insturctor.js          ← NLP-to-SQL engine
+│   │   ├── load-skills.js         ← skill loader (respects active-skills list)
+│   │   └── shell-command.js       ← PC execution engine ⚡
+│   ├── configure.js               ← interactive config CLI
+│   ├── conversations-ui.js        ← conversation history browser 💬
+│   ├── response.js                ← main AI pipeline
+│   └── skills.js                  ← interactive Skill Manager CLI
+├── conversations/                 ← auto-created; one JSON file per session 💬
 ├── core/
 │   └── utils/
-│       ├── deploySQL.js       ← MySQL connection pool
-│       └── files.js           ← filesystem helpers
-├── skills/                    ← drop .md skill files here
-│   └── nlp.md                 ← built-in: NLP-to-SQL (disabled by default)
+│       ├── deploySQL.js           ← MySQL connection pool
+│       └── files.js               ← filesystem helpers
+├── skills/                        ← drop .md skill files here
+│   └── nlp.md                     ← built-in: NLP-to-SQL (disabled by default)
 ├── UI/
-│   ├── headers.js             ← terminal header & label renderers
-│   ├── renderer.js            ← markdown stream printer
-│   ├── select.js              ← interactive select menu
-│   └── utils.js               ← shared terminal utilities
-├── .shell-audit.log           ← auto-generated command audit trail
-├── index.js                   ← conversation entry point
-├── cli.js                     ← main menu / launcher
-└── setup.js                   ← first-time setup script
+│   ├── headers.js                 ← terminal header & label renderers
+│   ├── main.js                    ← chat loop + history replay
+│   ├── renderer.js                ← markdown stream printer
+│   ├── select.js                  ← interactive select menu
+│   └── utils.js                   ← shared terminal utilities
+├── .shell-audit.log               ← auto-generated command audit trail
+├── index.js                       ← main menu / launcher
+├── cli.js                         ← dependency check & entry point
+└── setup.js                       ← first-time setup script
 ```
 
 ## 📋 Config Reference
@@ -598,7 +717,9 @@ han/
 
 ## 🔄 Reset Configuration
 
-If you need to wipe all settings and start over, go to **⚙ Configure agent → ↩ Reset all settings**, or delete `agents/config.json` and re-run:
+If you need to wipe all settings and start over, go to **⚙ Configure agent → ↩ Reset all settings**, or delete `agents/config.json` and re-run `npm run setup`.
+
+---
 
 <div align="center">
 
