@@ -81,6 +81,7 @@ async function main() {
             '💬  Conversation history',
             '⚙   Configure agent',
             '⚔   Manage skills',
+            '💡  Tell Han About You',
             '🛠   Run setup (create config and skills folder)',
             '✖   Exit',
         ],
@@ -114,6 +115,9 @@ async function main() {
     } else if (choice.startsWith('⚙')) {
         rl.close();
         require('./agents/configure');
+    } else if (choice.startsWith('💡')) {
+        rl.close();
+        require('./UI/introduction');
     }
 }
 
