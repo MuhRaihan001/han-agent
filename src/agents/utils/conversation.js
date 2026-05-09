@@ -4,7 +4,7 @@ const path = require('path');
 class Conversations {
 
     constructor(baseDir) {
-        this.conversationPath = baseDir || path.join(__dirname, '../../conversations');
+        this.conversationPath = baseDir || path.join(__dirname, '../../../conversations');
         this._ensureDir();
     }
 

@@ -4,8 +4,8 @@ const fs = require('fs/promises');
 const chalk = require('chalk');
 
 const PATHS = {
-    config: path.join(__dirname, 'agents/config.json'),
-    env: path.join(__dirname, '.env'),
+    config: path.join(__dirname, '../config.json'),
+    env: path.join(__dirname, '../.env'),
     skills: path.join(__dirname, 'skills'),
 };
 

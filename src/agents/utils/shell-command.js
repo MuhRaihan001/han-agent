@@ -3,7 +3,7 @@ const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
-const { loadConfig } = require('../utils/config');
+const { loadConfig } = require('./config');
 const { showSelect } = require('../../UI/select');
 
 const LOG_FILE = path.join(process.cwd(), '.shell-audit.log');

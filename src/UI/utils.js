@@ -2,7 +2,7 @@ const chalk = require('chalk');
 const fs    = require('fs');
 const path  = require('path');
 
-const configPath = path.join(__dirname, '../agents/config.json');
+const configPath = path.join(__dirname, '../../config.json');
 
 function loadConfig() {
     try {

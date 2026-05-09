@@ -1,6 +1,6 @@
 .env
 .shell-audit.log
 node_modules/
-agents/config.json
+config.json
 skills/introduction.md
 conversations/

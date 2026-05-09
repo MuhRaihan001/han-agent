@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 
-const skillsFolder = path.join(__dirname, '../../skills');
+const skillsFolder = path.join(__dirname, '../../../skills');
 let cachedSkills = null;
 
 async function loadSkillsRecursive(dir) {
@@ -24,7 +24,7 @@ async function loadSkillsRecursive(dir) {
 
 async function getSkillsContext() {
     if (!cachedSkills) {
-        const { loadConfig } = require('../utils/config');
+        const { loadConfig } = require('./config');
         const cfg = loadConfig();
         const activeSkills = Array.isArray(cfg['active-skills']) ? cfg['active-skills'] : [];
 
