@@ -38,7 +38,6 @@ function saveSkill(fullPath, content) {
     fs.writeFileSync(fullPath, content, 'utf-8');
 }
 
-// ── Active-skill helpers ──────────────────────────────────────────────────
 function getActiveSkills() {
     const cfg = loadConfig();
     return Array.isArray(cfg['active-skills']) ? cfg['active-skills'] : [];
@@ -59,10 +58,9 @@ function toggleSkill(name) {
         ? active.filter(n => n !== name)
         : [...active, name];
     setActiveSkills(next);
-    return next.includes(name); // returns new state
+    return next.includes(name);
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────
 const dim = s => chalk.dim(s);
 const W = () => Math.min((process.stdout.columns || 100) - 2, 80);
 
@@ -124,7 +122,7 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
         let curRow = 0;
         let curCol = 0;
         let scrollTop = 0;
-        let modified = false;
+        let hScrollOffset = 0;
 
         function getSize() {
             return { rows: process.stdout.rows || 24, cols: process.stdout.columns || 80 };
@@ -132,34 +130,45 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
 
         function gutterWidth() { return String(lines.length).length + 2; }
 
+        function contentStartCol() { return gutterWidth() + 2; }
+
         function render() {
             const { rows, cols } = getSize();
             const gutter = gutterWidth();
-            const contentCols = cols - gutter - 1;
+            const contentStart = contentStartCol(); // 1-based terminal col where text begins
+            const contentCols = cols - contentStart; // visible text columns
+
             const editorRows = rows - 2;
 
             if (curRow < scrollTop) scrollTop = curRow;
             if (curRow >= scrollTop + editorRows) scrollTop = curRow - editorRows + 1;
 
+            // Recalculate hScrollOffset so cursor is always visible.
+            if (curCol < hScrollOffset) {
+                hScrollOffset = curCol;
+            } else if (curCol >= hScrollOffset + contentCols) {
+                hScrollOffset = curCol - contentCols + 1;
+            }
+
             hideCursor();
             moveTo(1, 1); clearLine();
-            const modMark = modified ? chalk.bgYellow.black(' ● ') : chalk.bgGreen.black(' ✔ ');
+            const modMark = chalk.bgGreen.black(' ✔ ');
             const titleText = ` ✎  ${title} `;
             const titlePad = ' '.repeat(Math.max(0, cols - titleText.length - 3));
             write(chalk.bgHex('#0f4c75').white(titleText + titlePad) + modMark);
-
-            let hScrollOffset = 0;
-            if (curCol >= contentCols) hScrollOffset = curCol - contentCols + 1;
 
             for (let i = 0; i < editorRows; i++) {
                 moveTo(i + 2, 1); clearLine();
                 const lineIdx = scrollTop + i;
                 if (lineIdx >= lines.length) continue;
                 const num = chalk.dim(String(lineIdx + 1).padStart(gutter - 2) + ' │') + ' ';
-                let text = lines[lineIdx];
-                if (curRow === lineIdx) text = text.slice(hScrollOffset);
-                text = text.slice(0, contentCols);
-                write(num + chalk.white(text));
+                // Slice text according to hScrollOffset only for the current row so
+                // other rows always show from col 0 (they aren't scrolled horizontally).
+                const rawLine = lines[lineIdx];
+                const displayText = (curRow === lineIdx)
+                    ? rawLine.slice(hScrollOffset, hScrollOffset + contentCols)
+                    : rawLine.slice(0, contentCols);
+                write(num + chalk.white(displayText));
             }
 
             moveTo(rows, 1); clearLine();
@@ -167,7 +176,8 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
             const statusPad = ' '.repeat(Math.max(0, cols - statusText.length));
             write(chalk.bgHex('#1e2a3a').cyan(statusText + statusPad));
 
-            const displayCol = gutter + 1 + (curCol - hScrollOffset);
+            // Cursor column: contentStart (1-based) + (curCol - hScrollOffset)
+            const displayCol = contentStart + (curCol - hScrollOffset);
             const displayRow = curRow - scrollTop + 2;
             moveTo(displayRow, displayCol);
             showCursor();
@@ -192,36 +202,79 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
 
         process.stdin.on('data', key => {
             if (key === '\x03') { cleanup(null); return; }
-            if (key === '\x13') { modified = false; render(); return; }
-            if (key === '\x17') { cleanup(lines.join('\n')); return; }
-            if (key === '\x18') { cleanup(null); return; }
-            if (key === `${ESC}[A`) { if (curRow > 0) { curRow--; curCol = Math.min(curCol, lines[curRow].length); } render(); return; }
-            if (key === `${ESC}[B`) { if (curRow < lines.length - 1) { curRow++; curCol = Math.min(curCol, lines[curRow].length); } render(); return; }
-            if (key === `${ESC}[C`) { if (curCol < lines[curRow].length) curCol++; else if (curRow < lines.length - 1) { curRow++; curCol = 0; } render(); return; }
-            if (key === `${ESC}[D`) { if (curCol > 0) curCol--; else if (curRow > 0) { curRow--; curCol = lines[curRow].length; } render(); return; }
+            if (key === '\x13') { render(); return; } // ^S: just re-render (save marker)
+            if (key === '\x17') { cleanup(lines.join('\n')); return; } // ^W: save & exit
+            if (key === '\x18') { cleanup(null); return; } // ^X: exit
+
+            // Arrow keys
+            if (key === `${ESC}[A`) {
+                if (curRow > 0) { curRow--; curCol = Math.min(curCol, lines[curRow].length); }
+                render(); return;
+            }
+            if (key === `${ESC}[B`) {
+                if (curRow < lines.length - 1) { curRow++; curCol = Math.min(curCol, lines[curRow].length); }
+                render(); return;
+            }
+            if (key === `${ESC}[C`) {
+                if (curCol < lines[curRow].length) curCol++;
+                else if (curRow < lines.length - 1) { curRow++; curCol = 0; }
+                render(); return;
+            }
+            if (key === `${ESC}[D`) {
+                if (curCol > 0) curCol--;
+                else if (curRow > 0) { curRow--; curCol = lines[curRow].length; }
+                render(); return;
+            }
+
+            // Home / End
             if (key === `${ESC}[H` || key === '\x01') { curCol = 0; render(); return; }
             if (key === `${ESC}[F` || key === '\x05') { curCol = lines[curRow].length; render(); return; }
+
+            // Enter
             if (key === '\r' || key === '\n') {
                 const before = lines[curRow].slice(0, curCol);
                 const after = lines[curRow].slice(curCol);
                 lines[curRow] = before;
                 lines.splice(curRow + 1, 0, after);
-                curRow++; curCol = 0; modified = true; render(); return;
+                curRow++; curCol = 0;
+                // Reset hScroll when moving to new line
+                hScrollOffset = 0;
+                render(); return;
             }
+
+            // Backspace
             if (key === '\x7f' || key === '\b') {
-                if (curCol > 0) { lines[curRow] = lines[curRow].slice(0, curCol - 1) + lines[curRow].slice(curCol); curCol--; }
-                else if (curRow > 0) { const prevLen = lines[curRow - 1].length; lines[curRow - 1] += lines[curRow]; lines.splice(curRow, 1); curRow--; curCol = prevLen; }
-                modified = true; render(); return;
+                if (curCol > 0) {
+                    lines[curRow] = lines[curRow].slice(0, curCol - 1) + lines[curRow].slice(curCol);
+                    curCol--;
+                } else if (curRow > 0) {
+                    const prevLen = lines[curRow - 1].length;
+                    lines[curRow - 1] += lines[curRow];
+                    lines.splice(curRow, 1);
+                    curRow--; curCol = prevLen;
+                }
+                render(); return;
             }
+
+            // Delete
             if (key === `${ESC}[3~`) {
-                if (curCol < lines[curRow].length) lines[curRow] = lines[curRow].slice(0, curCol) + lines[curRow].slice(curCol + 1);
-                else if (curRow < lines.length - 1) { lines[curRow] += lines[curRow + 1]; lines.splice(curRow + 1, 1); }
-                modified = true; render(); return;
+                if (curCol < lines[curRow].length) {
+                    lines[curRow] = lines[curRow].slice(0, curCol) + lines[curRow].slice(curCol + 1);
+                } else if (curRow < lines.length - 1) {
+                    lines[curRow] += lines[curRow + 1];
+                    lines.splice(curRow + 1, 1);
+                }
+                render(); return;
             }
+
+            // Ignore other escape sequences
             if (key.startsWith(ESC)) return;
+
+            // Printable characters
             if (key >= ' ' || key === '\t') {
                 lines[curRow] = lines[curRow].slice(0, curCol) + key + lines[curRow].slice(curCol);
-                curCol += key.length; modified = true; render();
+                curCol += key.length;
+                render();
             }
         });
 
@@ -229,7 +282,6 @@ async function multilineEditor({ title, initial = '', rl: parentRL }) {
     });
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────
 
 async function actionAdd(rl) {
     printBox(
@@ -342,7 +394,6 @@ async function actionDelete(rl, skills) {
 
     if (!confirm || confirm.index !== 0) { printInfo('Delete cancelled.'); return; }
 
-    // Also remove from active-skills if present
     const active = getActiveSkills().filter(n => n !== skill.name);
     setActiveSkills(active);
 
@@ -371,10 +422,6 @@ function actionList(skills) {
     printBox(rows, { title: `Skills (${skills.length})` });
 }
 
-/**
- * Toggle page — lets the user flip individual skills on/off in a loop.
- * Loop exits when the user picks "← Done".
- */
 async function actionToggle(rl, skills) {
     if (skills.length === 0) { printInfo('No skills found.'); return; }
 
@@ -409,7 +456,6 @@ async function actionToggle(rl, skills) {
     }
 }
 
-// ── Main skill manager loop ───────────────────────────────────────────────
 
 async function skillManager() {
     const rl = makeRL();
