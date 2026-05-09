@@ -9,8 +9,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node cli.js",
-    "setup": "node setup.js"
+    "start": "node src/cli.js",
+    "setup": "node src/setup.js"
   },
   "author": "TsumuX",
   "license": "ISC",
