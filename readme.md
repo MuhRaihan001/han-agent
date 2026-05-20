@@ -649,13 +649,381 @@ Queries with **low confidence** or **ambiguous matches** are flagged before exec
 
 > The NLP → SQL feature requires the `nlp` skill to be **enabled** in the Skill Manager.
 
+---
+
+### How it works end-to-end
+
+The pipeline has four distinct stages: schema fetch → AI instruction → query build → execution. Here's each stage in full detail.
+
+```
+Your plain English command
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│  1. SCHEMA FETCH                        │
+│     Reads live table/column info        │
+│     from INFORMATION_SCHEMA + 3 sample  │
+│     rows per table, builds context JSON │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  2. AI INSTRUCTION GENERATION           │
+│     Schema + command sent to LLM        │
+│     LLM responds with structured JSON   │
+│     (one or more "actions")             │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  3. QUERY BUILDER                       │
+│     JSON → parameterized SQL string     │
+│     + param array, JOIN validation,     │
+│     ambiguity/confidence check          │
+└────────────────┬────────────────────────┘
+                 │
+         ┌───────┴───────┐
+         ▼               ▼
+    High confidence   Low confidence /
+    low ambiguity     high ambiguity
+         │               │
+         ▼               ▼
+┌──────────────┐  ┌──────────────────────┐
+│  4. EXECUTE  │  │  CONFIRMATION QUEUE  │
+│  mysql2 pool │  │  Show to user first, │
+│  parameterized│  │  execute on approval │
+│  query        │  └──────────────────────┘
+└──────────────┘
+```
+
+---
+
+### Stage 1 — Schema Fetch
+
+Before any AI call, HAN queries your database live to build a context object. This prevents the LLM from hallucinating table or column names — it only sees what actually exists.
+
+```sql
+-- Tables discovered
+SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+
+-- Columns for each table
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_KEY
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (...)
+ORDER BY TABLE_NAME, ORDINAL_POSITION
+
+-- 3 sample rows per table (for value inference)
+SELECT * FROM `<table>` LIMIT 3
+```
+
+The result is a JSON object like this, which gets injected into the AI prompt:
+
+```json
+{
+  "work": {
+    "columns": [
+      { "name": "id",     "type": "int",     "nullable": false, "key": "PRI" },
+      { "name": "status", "type": "varchar", "nullable": true,  "key": null  },
+      { "name": "name",   "type": "varchar", "nullable": false, "key": null  }
+    ],
+    "sample": [
+      { "id": 1, "status": "active",   "name": "Install panel" },
+      { "id": 2, "status": "done",     "name": "Wire conduit"  },
+      { "id": 3, "status": "pending",  "name": "Paint walls"   }
+    ]
+  },
+  "proyek": {
+    "columns": [
+      { "name": "id",     "type": "int",     "nullable": false, "key": "PRI" },
+      { "name": "name",   "type": "varchar", "nullable": false, "key": null  },
+      { "name": "status", "type": "varchar", "nullable": true,  "key": null  }
+    ],
+    "sample": [
+      { "id": 10, "name": "Block A", "status": "active" }
+    ]
+  }
+}
+```
+
+---
+
+### Stage 2 — AI Instruction JSON
+
+The LLM receives the schema context, your command, and optionally a worker context, then responds with a structured JSON instruction set — never raw SQL.
+
+#### What the AI receives
+
+```
+Current database state:
+{ ...schema JSON from Stage 1... }
+
+Command: "mark task 42 as done"
+
+IMPORTANT: You must respond using the "nlp-to-sql" skill.
+Respond ONLY with a valid JSON object in this exact format:
+{"actions":[{"method":"...","table":"...","joins":[...],...}]}
+```
+
+#### What the AI returns — the Instruction JSON
+
+```json
+{
+  "actions": [
+    {
+      "method":           "update",
+      "table":            "work",
+      "joins":            [],
+      "columns":          ["status"],
+      "where":            ["id"],
+      "params":           ["done", 42],
+      "ambiguity_level":  "low",
+      "confidence":       0.97,
+      "matched_task_ids": [42],
+      "reason":           "Update status of task id 42 to done"
+    }
+  ]
+}
+```
+
+#### Instruction JSON field reference
+
+| Field | Type | Description |
+|---|---|---|
+| `method` | `string` | SQL operation: `select` / `insert` / `update` / `delete` |
+| `table` | `string` | Primary target table |
+| `joins` | `array` | JOIN definitions (optional; SELECT only) |
+| `columns` | `string[]` | For UPDATE/INSERT: columns to SET. For SELECT: columns to return |
+| `where` | `string[]` | Columns used in the WHERE clause |
+| `params` | `any[]` | Ordered values — for UPDATE: `[...set_values, ...where_values]` |
+| `ambiguity_level` | `string` | `low` / `medium` / `high` |
+| `confidence` | `number` | 0.0–1.0 — how certain the mapping is |
+| `matched_task_ids` | `number[]` | IDs of rows the AI matched (empty when not applicable) |
+| `reason` | `string` | Plain-English explanation of the chosen action |
+
+#### JOIN sub-object schema
+
+```json
+{
+  "type":  "LEFT",
+  "table": "proyek",
+  "on":    "work.project_id = proyek.id"
+}
+```
+
+| Field | Values | Description |
+|---|---|---|
+| `type` | `INNER` / `LEFT` / `RIGHT` / `FULL` | JOIN type |
+| `table` | `string` | The table being joined |
+| `on` | `string` | Must match `table.column = table.column` — validated before use |
+
+#### Params ordering rules
+
+The `params` array order depends on the method:
+
+| Method | Params order |
+|---|---|
+| `select` | WHERE values only, in `where` column order |
+| `insert` | Values in `columns` order |
+| `update` | SET values first (`columns` order), then WHERE values (`where` order) |
+| `delete` | WHERE values only, in `where` column order |
+
+**Example — UPDATE with 2 SET + 1 WHERE:**
+```json
+"columns": ["status", "progress"],
+"where":   ["id"],
+"params":  ["done", 100, 42]
+//          SET ──────────  WHERE
+```
+
+---
+
+### Stage 3 — Query Builder
+
+`Instructor.generateMysqlQuery()` takes the instruction JSON and builds a safe, parameterized SQL string. No string interpolation — all user values go into the `params` array and are handled by mysql2's prepared statement driver.
+
+#### SELECT (no JOIN)
+
+```js
+// Input
+{ method: "select", table: "work", columns: ["id","name","status"], where: ["status"], params: ["active"] }
+
+// Output
+sql:    "SELECT `id`, `name`, `status` FROM `work` WHERE `status` = ?"
+params: ["active"]
+```
+
+#### SELECT (with JOIN)
+
+When `joins` is non-empty, column and WHERE names must be prefixed (`table.column`) — the builder skips backtick-wrapping for those to preserve the dot notation.
+
+```js
+// Input
+{
+  method:  "select",
+  table:   "work",
+  joins:   [{ type: "LEFT", table: "proyek", on: "work.project_id = proyek.id" }],
+  columns: ["work.id", "work.name", "proyek.name"],
+  where:   [],
+  params:  []
+}
+
+// Output
+sql:    "SELECT work.id, work.name, proyek.name FROM `work` LEFT JOIN `proyek` ON work.project_id = proyek.id"
+params: []
+```
+
+JOIN `on` clauses are validated against the regex `table.column = table.column` before the query is built — malformed expressions are rejected.
+
+#### INSERT
+
+```js
+// Input
+{ method: "insert", table: "work", columns: ["name","status"], params: ["New Task","pending"] }
+
+// Output
+sql:    "INSERT INTO `work` (`name`, `status`) VALUES (?, ?)"
+params: ["New Task", "pending"]
+```
+
+#### UPDATE
+
+```js
+// Input
+{ method: "update", table: "work", columns: ["status"], where: ["id"], params: ["done", 42] }
+
+// Output
+sql:    "UPDATE `work` SET `status` = ? WHERE `id` = ?"
+params: ["done", 42]
+```
+
+#### DELETE
+
+```js
+// Input
+{ method: "delete", table: "work", where: ["id"], params: [42] }
+
+// Output
+sql:    "DELETE FROM `work` WHERE `id` = ?"
+params: [42]
+```
+
+#### What the builder returns
+
+```js
+{
+  sql:    "UPDATE `work` SET `status` = ? WHERE `id` = ?",
+  params: ["done", 42],
+  meta: {
+    method:           "update",
+    table:            "work",
+    joins:            [],
+    ambiguity_level:  "low",
+    confidence:       0.97,
+    matched_task_ids: [42],
+    reason:           "Update status of task id 42 to done"
+  }
+}
+```
+
+#### Validation errors thrown by the builder
+
+| Condition | Error |
+|---|---|
+| Missing `method` or `table` | `method and table are required` |
+| JOIN on non-SELECT | `JOIN is only supported for SELECT` |
+| Malformed `on` clause | `Invalid JOIN ON clause: "..."` |
+| JOIN references unknown table | `JOIN references unknown table: "..."` |
+| INSERT `columns.length !== params.length` | `INSERT mismatch: N column(s) but M param(s)` |
+| UPDATE `params.length !== columns.length + where.length` | `UPDATE params mismatch: expected N but got M` |
+| DELETE `params.length !== where.length` | `DELETE WHERE mismatch: ...` |
+| Unknown `method` value | `Unsupported method: "..."` |
+
+---
+
+### Stage 4 — Ambiguity Check & Execution
+
+After the query is built, HAN checks `meta.confidence` and `meta.ambiguity_level`:
+
+| Condition | Route |
+|---|---|
+| `confidence >= 0.8` **and** `ambiguity_level === "low"` | Executes immediately |
+| `confidence < 0.8` **or** `ambiguity_level === "medium"/"high"` | Held in confirmation queue |
+
+Queries in the confirmation queue are shown to the user — with the full SQL, params, matched IDs, and reason — before anything touches the database.
+
+Execution goes through the `mysql2` connection pool using `.execute(sql, params)`, which sends values as a separate parameter array (never interpolated into the SQL string), preventing SQL injection at the driver level.
+
+```js
+// What actually runs against MySQL
+const [rows] = await connection.execute(
+  "UPDATE `work` SET `status` = ? WHERE `id` = ?",
+  ["done", 42]
+);
+```
+
+---
+
+### Confidence and ambiguity in practice
+
+```
+❯ finish my task
+  Worker context: id=7, name="Install panel"
+→ confidence: 0.97  ambiguity: low   → executes immediately
+
+❯ mark the painting task as done
+  3 tasks match "painting"
+→ confidence: 0.45  ambiguity: high  → confirmation required
+  ┌─ Matched IDs: [3, 11, 19]
+  ├─ SQL: UPDATE `work` SET `status` = ? WHERE `name` = ?
+  └─ Params: ["done", "painting"]
+
+❯ delete something
+→ confidence: 0.20  ambiguity: high  → confirmation required
+  (vague — no table or ID inferred)
+```
+
+---
+
 ### JOIN support
 
-The NLP engine supports LEFT, RIGHT, INNER, and FULL JOIN operations on SELECT queries. When a join is needed, columns and WHERE clauses are automatically prefixed with the table name (e.g. `work.id`, `proyek.name`). JOIN is not permitted on INSERT, UPDATE, or DELETE operations.
+The NLP engine supports `LEFT`, `RIGHT`, `INNER`, and `FULL` JOIN on `SELECT` queries. When a join is needed, columns and WHERE clauses must be prefixed with the table name (e.g. `work.id`, `proyek.name`). JOIN is not permitted on `INSERT`, `UPDATE`, or `DELETE`.
 
-### Confidence and ambiguity
+The `on` expression is checked against a strict pattern before any SQL is built:
 
-Every generated action carries a `confidence` score from 0.0 to 1.0 and an `ambiguity_level` of `low`, `medium`, or `high`. Actions with confidence below 0.8 or ambiguity above `low` are routed to a confirmation queue and will not execute until you approve them. A maximum of 5 actions can be generated per request.
+```
+Valid:   work.project_id = proyek.id
+Valid:   `work`.`id` = `proyek`.`work_id`
+Invalid: work.id > proyek.id          ← operator not supported
+Invalid: 1=1                          ← no table prefix
+```
+
+---
+
+### Worker context
+
+When you pass a worker context (name + current task ID), the AI uses it to resolve ambiguous commands without asking for clarification:
+
+```
+"finish my task"
+Worker: Name=John, Current Task ID=7, Current Task Name="Install panel"
+
+→ UPDATE `work` SET `status` = ? WHERE `id` = ?  ["done", 7]
+   reason: "Worker John requested to finish their active task (id: 7)"
+```
+
+Without worker context, the same command would produce a lower-confidence, higher-ambiguity result and land in the confirmation queue.
+
+---
+
+### Constraints
+
+- This pipeline **does not execute queries directly** — `Instructor` only produces a `{ sql, params, meta }` object; the caller decides whether to run it
+- Actions with `confidence < 0.8` or `ambiguity_level` of `medium`/`high` **must be confirmed** by the user before execution
+- Maximum **5 actions** per response
+- Only standard **CRUD operations** are supported (`SELECT`, `INSERT`, `UPDATE`, `DELETE`)
+- JOINs are `SELECT`-only; subqueries and complex aggregations are not supported
+- All table and column names are backtick-quoted (except JOIN-prefixed names) to prevent identifier injection
 
 ## 🧵 Conversation History & Memory
 
